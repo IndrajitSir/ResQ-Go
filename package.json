@@ -1,0 +1,26 @@
+{
+  "name": "ambulance-booking-system",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Ambulance Booking System - modular monolith (Next.js web + NestJS API)",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev:api": "npm run dev --workspace @abs/api",
+    "dev:web": "npm run dev --workspace @abs/web",
+    "build": "npm run build --workspaces --if-present",
+    "build:api": "npm run build --workspace @abs/api",
+    "build:web": "npm run build --workspace @abs/web",
+    "test": "npm run test --workspaces --if-present",
+    "test:api": "npm run test --workspace @abs/api",
+    "lint": "npm run lint --workspaces --if-present",
+    "db:push": "npm run db:push --workspace @abs/api",
+    "db:seed": "npm run seed --workspace @abs/api",
+    "db:migrate": "npm run migrate --workspace @abs/api"
+  }
+}

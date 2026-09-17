@@ -1,0 +1,158 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String        @id @default(cuid())
+  publicId     String        @unique
+  name         String
+  email        String        @unique
+  phone        String
+  passwordHash String
+  role         String
+  status       String        @default("ACTIVE")
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  deletedAt    DateTime?
+  driverProfile DriverProfile?
+  bookings     Booking[]
+  trips        Trip[]
+  notifications Notification[]
+  ambulances   Ambulance[]
+}
+
+model DriverProfile {
+  id                   String   @id @default(cuid())
+  userId               String   @unique
+  user                 User     @relation(fields: [userId], references: [id])
+  availability         String   @default("OFF_DUTY")
+  licenseVerification  String   @default("UNVERIFIED")
+  identityVerification String   @default("UNVERIFIED")
+  verifiedAt           DateTime?
+}
+
+model Ambulance {
+  id                String   @id @default(cuid())
+  publicId          String   @unique
+  registrationNumber String  @unique
+  type              String
+  capabilities      String   @default("[]")
+  serviceArea       String
+  status            String   @default("AVAILABLE")
+  baseLatitude      Float?
+  baseLongitude     Float?
+  driverId          String?
+  driver            User?    @relation(fields: [driverId], references: [id])
+  trips             Trip[]
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model Booking {
+  id                    String   @id @default(cuid())
+  publicId              String   @unique
+  requesterId           String
+  requester             User     @relation(fields: [requesterId], references: [id])
+  pickupLabel           String
+  pickupAddress         String
+  pickupLatitude        Float
+  pickupLongitude       Float
+  destLabel             String
+  destAddress           String
+  destLatitude          Float
+  destLongitude         Float
+  requiredAmbulanceType String
+  urgency               String   @default("URGENT")
+  notes                 String?
+  status                String   @default("REQUESTED")
+  cancellationReason    String?
+  cancellationDetails   String?
+  idempotencyKey        String?  @unique
+  trip                  Trip?
+  events                BookingEvent[]
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([requesterId, createdAt])
+  @@index([status, createdAt])
+}
+
+model Trip {
+  id              String    @id @default(cuid())
+  publicId        String    @unique
+  bookingId       String    @unique
+  booking         Booking   @relation(fields: [bookingId], references: [id])
+  ambulanceId     String
+  ambulance       Ambulance @relation(fields: [ambulanceId], references: [id])
+  driverId        String
+  driver          User      @relation(fields: [driverId], references: [id])
+  acceptedAt      DateTime?
+  rejectedAt      DateTime?
+  rejectionReason String?
+  arrivedAt       DateTime?
+  onboardedAt     DateTime?
+  completedAt     DateTime?
+  failedAt        DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([driverId])
+}
+
+model BookingEvent {
+  id             String   @id @default(cuid())
+  publicId       String   @unique
+  bookingId      String
+  booking        Booking  @relation(fields: [bookingId], references: [id])
+  type           String
+  previousStatus String?
+  newStatus      String?
+  actorPublicId  String?
+  metadata       String   @default("{}")
+  createdAt      DateTime @default(now())
+
+  @@index([bookingId, createdAt])
+}
+
+model Notification {
+  id             String   @id @default(cuid())
+  publicId       String   @unique
+  recipientId    String
+  recipient      User     @relation(fields: [recipientId], references: [id])
+  channel        String   @default("IN_APP")
+  templateKey    String
+  body           String
+  deliveryStatus String   @default("PENDING")
+  createdAt      DateTime @default(now())
+
+  @@index([recipientId, createdAt])
+}
+
+model AuditLog {
+  id               String   @id @default(cuid())
+  publicId         String   @unique
+  actorPublicId    String?
+  action           String
+  resourceType     String
+  resourcePublicId String?
+  requestId        String?
+  result           String
+  createdAt        DateTime @default(now())
+
+  @@index([resourceType, resourcePublicId, createdAt])
+}
+
+model IdempotencyRecord {
+  id            String   @id @default(cuid())
+  key           String   @unique
+  userPublicId  String
+  status        String   @default("IN_PROGRESS")
+  responseJson  String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}

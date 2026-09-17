@@ -31,7 +31,7 @@ Allowed transitions must be explicitly defined in code.
 DRAFT → REQUESTED
 REQUESTED → SEARCHING | CANCELLED_BY_PATIENT | EXPIRED
 SEARCHING → ASSIGNED | REJECTED | CANCELLED_BY_OPERATOR
-ASSIGNED → DRIVER_EN_ROUTE | CANCELLED_BY_OPERATOR
+ASSIGNED → DRIVER_EN_ROUTE | SEARCHING | CANCELLED_BY_OPERATOR
 DRIVER_EN_ROUTE → ARRIVED | CANCELLED_BY_OPERATOR
 ARRIVED → PATIENT_ONBOARD | CANCELLED_BY_OPERATOR
 PATIENT_ONBOARD → IN_TRANSIT
@@ -106,3 +106,4 @@ If a real operation requires a transition not listed here, update this document,
 ## Changelog
 
 - Initial ruleset.
+- 2026-09-17: Added `ASSIGNED → SEARCHING` transition to support driver rejection and reassignment (domain logic, contracts, and tests updated together per the rule above).

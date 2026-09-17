@@ -1,0 +1,35 @@
+version: "3.9"
+
+# Local development dependencies. Docker is OPTIONAL: the API defaults to
+# SQLite for local development. Use this file when you want to run
+# PostgreSQL/Redis locally, or for staging-like environments.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-abs}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-abs_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-abs}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-abs}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
