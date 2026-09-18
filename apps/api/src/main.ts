@@ -1,3 +1,4 @@
+import './env';
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { intFromEnv, API_PORT_DEFAULT, API_V1_PREFIX, requireEnv } from '@abs/config';

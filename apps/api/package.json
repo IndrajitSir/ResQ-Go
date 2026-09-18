@@ -6,24 +6,28 @@
   "scripts": {
     "start": "node dist/main.js",
     "dev": "nest start --watch",
+    "prebuild": "npm run build --workspace @abs/contracts && npm run build --workspace @abs/config",
     "build": "nest build",
     "test": "jest",
     "test:watch": "jest --watch",
-    "seed": "ts-node prisma/seed.ts",
-    "db:push": "prisma db push",
-    "migrate": "prisma migrate dev"
+    "seed": "node scripts/with-env.mjs ts-node prisma/seed.ts",
+    "db:push": "node scripts/with-env.mjs prisma db push",
+    "migrate": "node scripts/with-env.mjs prisma migrate dev"
   },
   "dependencies": {
-    "@abs/contracts": "*",
     "@abs/config": "*",
+    "@abs/contracts": "*",
     "@nestjs/common": "^10",
     "@nestjs/core": "^10",
     "@nestjs/jwt": "^10",
     "@nestjs/platform-express": "^10",
     "@prisma/client": "^5.22.0",
+    "@types/supertest": "^6.0.3",
     "bcryptjs": "^2.4.3",
+    "dotenv": "^16.6.1",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7"
+    "rxjs": "^7",
+    "supertest": "^7.2.2"
   },
   "devDependencies": {
     "@nestjs/cli": "^10",

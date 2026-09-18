@@ -3,6 +3,7 @@ import { DispatchService } from './dispatch.service';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { NotificationsService } from '../notifications/notifications.service';
 import type { AuditService } from '../audit/audit.service';
+import type { RealtimeService } from '../realtime/realtime.service';
 import type { AuthUser } from '../common/auth/auth-user';
 
 function createPrismaStub(): { stub: Record<string, unknown>; prisma: PrismaService } {
@@ -26,6 +27,12 @@ const notificationsMock = {
 } as unknown as NotificationsService;
 
 const auditMock = { record: jest.fn(), list: jest.fn() } as unknown as AuditService;
+
+const realtimeMock = {
+  publish: jest.fn(),
+  publishToOperators: jest.fn(),
+  streamFor: jest.fn(),
+} as unknown as RealtimeService;
 
 const dispatcherUser: AuthUser = { publicId: 'dispatcher-1', role: 'DISPATCHER' };
 
@@ -68,7 +75,7 @@ describe('DispatchService.assign', () => {
     (stub['$transaction'] as jest.Mock).mockImplementation(
       async (fn: (tx: unknown) => Promise<unknown>) => fn(stub),
     );
-    const service = new DispatchService(prisma, notificationsMock, auditMock);
+    const service = new DispatchService(prisma, notificationsMock, auditMock, realtimeMock);
 
     await expect(
       service.assign('booking-1', dto, dispatcherUser, 'req-1'),
@@ -81,7 +88,11 @@ describe('DispatchService.assign', () => {
     (stub['booking'] as { findUnique: jest.Mock }).findUnique.mockResolvedValue(
       bookingRow('ASSIGNED'),
     );
-    const service = new DispatchService(prisma, notificationsMock, auditMock);
+    // The guard lives inside the transaction callback, so the stub must run it.
+    (stub['$transaction'] as jest.Mock).mockImplementation(
+      async (fn: (tx: unknown) => Promise<unknown>) => fn(stub),
+    );
+    const service = new DispatchService(prisma, notificationsMock, auditMock, realtimeMock);
 
     await expect(
       service.assign('booking-1', dto, dispatcherUser, 'req-1'),
@@ -101,7 +112,7 @@ describe('DispatchService.assign', () => {
     (stub['$transaction'] as jest.Mock).mockImplementation(
       async (fn: (tx: unknown) => Promise<unknown>) => fn(stub),
     );
-    const service = new DispatchService(prisma, notificationsMock, auditMock);
+    const service = new DispatchService(prisma, notificationsMock, auditMock, realtimeMock);
 
     await expect(
       service.assign('booking-1', dto, dispatcherUser, 'req-1'),

@@ -1,5 +1,11 @@
-import { Body, Controller, Get, Patch } from '@nestjs/common';
-import { driverAvailabilitySchema, type DriverAvailabilityDto } from '@abs/contracts';
+import { Body, Controller, Get, Param, Patch, Request } from '@nestjs/common';
+import type { Request as ExpressRequest } from 'express';
+import {
+  driverAvailabilitySchema,
+  driverVerificationSchema,
+  type DriverAvailabilityDto,
+  type DriverVerificationDto,
+} from '@abs/contracts';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { DRIVER_ONLY, OPERATOR_ROLES } from '../common/auth/role-sets';
@@ -30,5 +36,17 @@ export class DriversController {
   @Roles(...OPERATOR_ROLES)
   list(): Promise<Awaited<ReturnType<DriversService['list']>>> {
     return this.driversService.list();
+  }
+
+  /** Operators record identity and licence checks for a crew member. */
+  @Patch(':publicId/verification')
+  @Roles(...OPERATOR_ROLES)
+  setVerification(
+    @Param('publicId') publicId: string,
+    @Body(new ZodValidationPipe(driverVerificationSchema)) dto: DriverVerificationDto,
+    @CurrentUser() user: AuthUser,
+    @Request() request: ExpressRequest,
+  ): Promise<Awaited<ReturnType<DriversService['setVerification']>>> {
+    return this.driversService.setVerification(publicId, dto, user!.publicId, request.requestId ?? '');
   }
 }

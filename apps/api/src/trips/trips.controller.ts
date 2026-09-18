@@ -1,8 +1,10 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import {
   assignmentDecisionSchema,
+  tripLocationSchema,
   tripStatusUpdateSchema,
   type AssignmentDecisionDto,
+  type TripLocationDto,
   type TripStatusUpdateDto,
 } from '@abs/contracts';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -40,6 +42,17 @@ export class TripsController {
     @CurrentUser() user: AuthUser,
   ): Promise<Awaited<ReturnType<TripsService['updateStatus']>>> {
     return this.tripsService.updateStatus(publicId, dto, user!);
+  }
+
+  /** Driver position ping; the requester and dispatch see it live. */
+  @Post(':publicId/location')
+  @Roles(...DRIVER_ONLY)
+  recordLocation(
+    @Param('publicId') publicId: string,
+    @Body(new ZodValidationPipe(tripLocationSchema)) dto: TripLocationDto,
+    @CurrentUser() user: AuthUser,
+  ): Promise<Awaited<ReturnType<TripsService['recordLocation']>>> {
+    return this.tripsService.recordLocation(publicId, dto, user!);
   }
 
   @Get(':publicId')

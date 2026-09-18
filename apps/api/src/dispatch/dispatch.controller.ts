@@ -1,6 +1,6 @@
 import { Controller, Get, Param, Post, Body, Query, Request } from '@nestjs/common';
 import { assignAmbulanceSchema, type AssignAmbulanceDto } from '@abs/contracts';
-import type { Request } from 'express';
+import type { Request as ExpressRequest } from 'express';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { OPERATOR_ROLES } from '../common/auth/role-sets';
@@ -18,6 +18,11 @@ export class DispatchController {
     return this.dispatchService.queue();
   }
 
+  @Get('dashboard')
+  dashboard(): Promise<Awaited<ReturnType<DispatchService['dashboard']>>> {
+    return this.dispatchService.dashboard();
+  }
+
   @Get('eligible')
   eligible(
     @Query('bookingPublicId') bookingPublicId: string,
@@ -30,7 +35,7 @@ export class DispatchController {
     @Param('publicId') publicId: string,
     @Body(new ZodValidationPipe(assignAmbulanceSchema)) dto: AssignAmbulanceDto,
     @CurrentUser() user: AuthUser,
-    @Request() request: Request,
+    @Request() request: ExpressRequest,
   ): Promise<Awaited<ReturnType<DispatchService['assign']>>> {
     return this.dispatchService.assign(publicId, dto, user!, request.requestId ?? '');
   }

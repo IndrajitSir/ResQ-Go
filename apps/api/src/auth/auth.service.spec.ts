@@ -37,7 +37,7 @@ describe('AuthService', () => {
 
       await expect(
         service.login({ email: 'patient@example.com', password: 'Wrong#Password1' }, '1.2.3.4'),
-      ).rejects.toMatchObject({ status: HttpStatus.UNAUTHENTICATED });
+      ).rejects.toMatchObject({ status: HttpStatus.UNAUTHORIZED });
 
       // The message must be the generic one, not a user-specific hint.
       try {
@@ -55,7 +55,7 @@ describe('AuthService', () => {
 
       await expect(
         service.login({ email: 'ghost@example.com', password: 'Whatever#123' }, '1.2.3.4'),
-      ).rejects.toMatchObject({ status: HttpStatus.UNAUTHENTICATED });
+      ).rejects.toMatchObject({ status: HttpStatus.UNAUTHORIZED });
     });
 
     it('throws 429 RATE_LIMITED after 10 failed attempts for the same email+IP', async () => {
@@ -67,7 +67,7 @@ describe('AuthService', () => {
         service.login({ email: 'ratelimit@example.com', password: 'Whatever#123' }, '1.2.3.4');
 
       for (let i = 0; i < 10; i += 1) {
-        await expect(attempt()).rejects.toMatchObject({ status: HttpStatus.UNAUTHENTICATED });
+        await expect(attempt()).rejects.toMatchObject({ status: HttpStatus.UNAUTHORIZED });
       }
       await expect(attempt()).rejects.toMatchObject({
         code: 'RATE_LIMITED',

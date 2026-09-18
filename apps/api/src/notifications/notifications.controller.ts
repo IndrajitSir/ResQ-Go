@@ -1,5 +1,5 @@
 import { Controller, Get, Request } from '@nestjs/common';
-import type { Request } from 'express';
+import type { Request as ExpressRequest } from 'express';
 import { mapNotification } from '../common/mappers';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -8,7 +8,7 @@ export class NotificationsController {
   constructor(private readonly prisma: PrismaService) {}
 
   @Get('mine')
-  async mine(@Request() request: Request) {
+  async mine(@Request() request: ExpressRequest) {
     const user = await this.prisma.user.findUniqueOrThrow({
       where: { publicId: request.user!.publicId },
       select: { id: true },

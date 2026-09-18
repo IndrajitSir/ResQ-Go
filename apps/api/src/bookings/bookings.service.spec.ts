@@ -4,6 +4,7 @@ import { BookingsService } from './bookings.service';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { NotificationsService } from '../notifications/notifications.service';
 import type { AuditService } from '../audit/audit.service';
+import type { RealtimeService } from '../realtime/realtime.service';
 import type { AuthUser } from '../common/auth/auth-user';
 
 /**
@@ -15,7 +16,12 @@ function createPrismaStub(): {
   prisma: PrismaService;
 } {
   const stub: Record<string, unknown> = {
-    user: { findUnique: jest.fn(), findUniqueOrThrow: jest.fn() },
+    // The service resolves the requester before touching idempotency state, so the
+    // stub returns a real user unless a test overrides it.
+    user: {
+      findUnique: jest.fn().mockResolvedValue({ id: 'u1', publicId: 'patient-a' }),
+      findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 'u1', publicId: 'patient-a' }),
+    },
     idempotencyRecord: {
       findUnique: jest.fn(),
       create: jest.fn(),
@@ -42,6 +48,12 @@ const auditMock = {
   record: jest.fn(),
   list: jest.fn(),
 } as unknown as AuditService;
+
+const realtimeMock = {
+  publish: jest.fn(),
+  publishToOperators: jest.fn(),
+  streamFor: jest.fn(),
+} as unknown as RealtimeService;
 
 const patientUser: AuthUser = { publicId: 'patient-a', role: 'PATIENT' };
 const otherPatientUser: AuthUser = { publicId: 'patient-b', role: 'PATIENT' };
@@ -80,12 +92,13 @@ describe('BookingsService', () => {
   describe('findOne ownership', () => {
     it('returns NOT_FOUND when a patient requests another patient\'s booking', async () => {
       const { stub, prisma } = createPrismaStub();
+      // The booking belongs to patient-b; patient-a must not be able to read it.
       (stub['booking'] as { findUnique: jest.Mock }).findUnique.mockResolvedValue(
-        bookingRow({ requester: { id: 'u2', publicId: 'patient-b' } }),
+        bookingRow({ requester: { id: 'u2', publicId: otherPatientUser.publicId } }),
       );
-      const service = new BookingsService(prisma, notificationsMock, auditMock);
+      const service = new BookingsService(prisma, notificationsMock, auditMock, realtimeMock);
 
-      await expect(service.findOne('booking-1', otherPatientUser)).rejects.toMatchObject({
+      await expect(service.findOne('booking-1', patientUser)).rejects.toMatchObject({
         code: 'NOT_FOUND',
         status: HttpStatus.NOT_FOUND,
       });
@@ -94,7 +107,7 @@ describe('BookingsService', () => {
     it('allows the owning patient to view their booking', async () => {
       const { stub, prisma } = createPrismaStub();
       (stub['booking'] as { findUnique: jest.Mock }).findUnique.mockResolvedValue(bookingRow());
-      const service = new BookingsService(prisma, notificationsMock, auditMock);
+      const service = new BookingsService(prisma, notificationsMock, auditMock, realtimeMock);
 
       const result = await service.findOne('booking-1', patientUser);
       expect(result.booking.publicId).toBe('booking-1');
@@ -120,7 +133,7 @@ describe('BookingsService', () => {
         status: 'COMPLETED',
         responseJson: JSON.stringify(storedView),
       });
-      const service = new BookingsService(prisma, notificationsMock, auditMock);
+      const service = new BookingsService(prisma, notificationsMock, auditMock, realtimeMock);
 
       const dto = {
         idempotencyKey: '11111111-1111-4111-8111-111111111111',
@@ -143,7 +156,7 @@ describe('BookingsService', () => {
         status: 'IN_PROGRESS',
         responseJson: null,
       });
-      const service = new BookingsService(prisma, notificationsMock, auditMock);
+      const service = new BookingsService(prisma, notificationsMock, auditMock, realtimeMock);
 
       const dto = {
         idempotencyKey: '11111111-1111-4111-8111-111111111111',
@@ -173,7 +186,7 @@ describe('BookingsService', () => {
           },
         }),
       );
-      const service = new BookingsService(prisma, notificationsMock, auditMock);
+      const service = new BookingsService(prisma, notificationsMock, auditMock, realtimeMock);
 
       await expect(
         service.cancel(

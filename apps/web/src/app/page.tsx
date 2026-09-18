@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { DisclaimerBanner } from '@/components/disclaimer-banner';
 
 export const metadata = {
-  title: 'ABS — Book an ambulance in minutes',
+  title: 'Resq-Go — Book an ambulance in minutes',
 };
 
 const steps = [
@@ -41,7 +41,7 @@ export default function LandingPage() {
       <section className="hero">
         <h1>Book an ambulance in minutes</h1>
         <p>
-          ABS connects patients with the right ambulance — from basic patient transport to
+          Resq-Go connects patients with the right ambulance — from basic patient transport to
           intensive care units — and keeps everyone informed from request to arrival.
         </p>
         <div className="btn-row" style={{ justifyContent: 'center' }}>
@@ -50,6 +50,11 @@ export default function LandingPage() {
           </Link>
           <Link className="btn btn-ghost" href="/book">
             Book an ambulance
+          </Link>
+        </div>
+        <div className="btn-row" style={{ justifyContent: 'center', marginTop: '1rem' }}>
+          <Link className="btn btn-danger" href="/book/emergency">
+            Medical emergency? Request now
           </Link>
         </div>
       </section>

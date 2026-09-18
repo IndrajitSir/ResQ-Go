@@ -14,10 +14,12 @@ import { TripsModule } from './trips/trips.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { AuditModule } from './audit/audit.module';
 import { HealthModule } from './health/health.module';
+import { RealtimeModule } from './realtime/realtime.module';
 
 @Module({
   imports: [
     PrismaModule,
+    RealtimeModule,
     AuthModule,
     NotificationsModule,
     UsersModule,

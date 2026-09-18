@@ -3,7 +3,7 @@ import type { UserView } from '@abs/contracts';
 const TOKEN_KEY = 'abs.auth.token';
 const USER_KEY = 'abs.auth.user';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1';
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1';
 
 export function getAccessToken(): string | null {
   if (typeof window === 'undefined') return null;

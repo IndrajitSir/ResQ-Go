@@ -619,6 +619,274 @@ fieldset {
   }
 }
 
+/* ---------- Emergency booking flow ---------- */
+
+.emergency-hero {
+  text-align: center;
+  padding: 2rem 1rem 1.5rem;
+}
+
+.emergency-icon {
+  color: var(--color-red);
+  margin-bottom: 1rem;
+}
+
+.emergency-title {
+  font-size: 2rem;
+  font-weight: 700;
+  margin: 0 0 0.5rem;
+  color: var(--color-text);
+}
+
+.emergency-sub {
+  color: var(--color-text-muted);
+  max-width: 28rem;
+  margin: 0 auto;
+}
+
+.emergency-location-status {
+  text-align: center;
+  color: var(--color-text-muted);
+  margin: 1rem 0;
+}
+
+.emergency-primary-action {
+  width: 100%;
+  padding: 1rem 1.5rem;
+  font-size: 1.25rem;
+  font-weight: 700;
+  border-radius: var(--radius);
+  margin-bottom: 1rem;
+}
+
+.emergency-hint {
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  margin: 0;
+}
+
+.emergency-alternatives {
+  text-align: center;
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.btn-call-emergency {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--color-surface);
+  color: var(--color-red);
+  border: 2px solid var(--color-red);
+  padding: 0.75rem 1.5rem;
+  border-radius: var(--radius);
+  font-weight: 600;
+  font-size: 1rem;
+  text-decoration: none;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.btn-call-emergency:hover {
+  background: var(--color-red);
+  color: #fff;
+}
+
+.emergency-booking-id {
+  text-align: center;
+  margin: 1rem 0;
+}
+
+.emergency-booking-id code {
+  font-family: var(--font-mono);
+  background: var(--color-bg);
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+}
+
+.emergency-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin: 1rem 0;
+  padding: 1rem;
+  background: var(--color-bg);
+  border-radius: var(--radius);
+}
+
+.emergency-meta dt {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  margin-bottom: 0.15rem;
+}
+
+.emergency-meta dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.emergency-actions {
+  margin-top: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+@media (min-width: 480px) {
+  .emergency-actions {
+    flex-direction: row;
+    justify-content: center;
+  }
+}
+
+.emergency-confirmed {
+  text-align: center;
+  padding: 2rem 1rem;
+}
+
+.emergency-note {
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  margin-top: 1rem;
+}.alert-amber {
+  background: var(--color-amber-bg);
+  color: var(--color-amber);
+  border-color: #fde68a;
+}
+
+/* ---------- Booking detail: tracking & crew ---------- */
+
+.live-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-green);
+  animation: pulse-dot 1.5s ease-in-out infinite;
+  margin-left: 0.25rem;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.tracking-strip {
+  display: flex;
+  gap: 1.5rem;
+  justify-content: center;
+  padding: 0.75rem;
+  border-radius: var(--radius);
+  background: var(--color-card-alt, #f0fdf4);
+}
+
+.tracking-stat {
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+}
+
+.tracking-stat strong {
+  font-size: 1.1rem;
+  color: var(--color-text);
+}
+
+.crew-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  background: var(--color-card);
+}
+
+.crew-card-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+  margin-bottom: 0.35rem;
+}
+
+.crew-card-detail {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.step-done,
+.step-active {
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.step-done {
+  background: var(--color-green-bg);
+  color: var(--color-green);
+}
+
+.step-active {
+  background: var(--color-teal-bg);
+  color: var(--color-teal);
+}
+
+/* ---------- Dispatcher fleet summary ---------- */
+
+.fleet-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.fleet-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.75rem;
+  border-radius: var(--radius);
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+}
+
+.fleet-number {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.fleet-label {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  margin-top: 0.25rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.fleet-available .fleet-number { color: var(--color-green); }
+.fleet-busy .fleet-number { color: var(--color-amber); }
+.fleet-off .fleet-number { color: var(--color-text-muted); }
+
+.dispatch-active-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 0.85rem;
+}
+
+.dispatch-active-row:last-child {
+  border-bottom: none;
+}
+
 /* ---------- Utility ---------- */
 
 .mono {

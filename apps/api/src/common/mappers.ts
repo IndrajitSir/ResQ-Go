@@ -2,6 +2,7 @@ import type {
   AmbulanceStatus,
   AmbulanceType,
   AmbulanceView,
+  AssignedCrewView,
   BookingEventView,
   BookingStatus,
   BookingView,
@@ -9,6 +10,7 @@ import type {
   DriverAvailabilityStatus,
   DriverProfileView,
   NotificationView,
+  TripLocationView,
   TripView,
   UrgencyCategory,
   UserStatus,
@@ -47,6 +49,21 @@ export interface AmbulanceRow {
   serviceArea: string;
   status: string;
   createdAt: Date;
+  driver?: { publicId: string; name: string } | null;
+}
+
+export interface TripLocationRow {
+  latitude: number;
+  longitude: number;
+  heading: number | null;
+  speedKph: number | null;
+  recordedAt: Date;
+}
+
+/** Crew shape shared by the patient tracking view and the dispatch console. */
+export interface AssignedCrewRow {
+  driver: { publicId: string; name: string; phone: string; driverProfile?: { availability: string } | null };
+  ambulance: { publicId: string; registrationNumber: string; type: string; status: string };
 }
 
 export interface TripRow {
@@ -74,6 +91,7 @@ export interface BookingRow {
   destLongitude: number;
   requiredAmbulanceType: string;
   notes: string | null;
+  destinationPending?: boolean;
   cancellationReason: string | null;
   cancellationDetails: string | null;
   requester?: { publicId: string } | null;
@@ -136,7 +154,7 @@ export function mapAmbulance(row: AmbulanceRow): AmbulanceView {
   } catch {
     capabilities = [];
   }
-  return {
+  const view: AmbulanceView = {
     publicId: row.publicId,
     registrationNumber: row.registrationNumber,
     type: row.type as AmbulanceType,
@@ -145,6 +163,37 @@ export function mapAmbulance(row: AmbulanceRow): AmbulanceView {
     status: row.status as AmbulanceStatus,
     createdAt: iso(row.createdAt),
   };
+  if (row.driver) {
+    view.assignedDriverPublicId = row.driver.publicId;
+    view.assignedDriverName = row.driver.name;
+  }
+  return view;
+}
+
+/** Contact details a requester or operator needs while a crew is assigned. */
+export function mapAssignedCrew(row: AssignedCrewRow): AssignedCrewView {
+  return {
+    driverPublicId: row.driver.publicId,
+    driverName: row.driver.name,
+    driverPhone: row.driver.phone,
+    ambulancePublicId: row.ambulance.publicId,
+    ambulanceRegistrationNumber: row.ambulance.registrationNumber,
+    ambulanceType: row.ambulance.type as AmbulanceType,
+    ambulanceStatus: row.ambulance.status as AmbulanceStatus,
+    driverAvailability: (row.driver.driverProfile?.availability ?? 'OFF_DUTY') as DriverAvailabilityStatus,
+  };
+}
+
+/** Latest known vehicle position. `attributes` are omitted when unreported. */
+export function mapTripLocation(row: TripLocationRow): TripLocationView {
+  const view: TripLocationView = {
+    latitude: row.latitude,
+    longitude: row.longitude,
+    recordedAt: iso(row.recordedAt),
+  };
+  if (row.heading !== null) view.heading = row.heading;
+  if (row.speedKph !== null) view.speedKph = row.speedKph;
+  return view;
 }
 
 export function mapTrip(row: TripRow): TripView {
@@ -185,6 +234,9 @@ export function mapBooking(row: BookingRow): BookingView {
   };
   if (row.notes !== null && row.notes !== undefined && row.notes !== '') {
     view.notes = row.notes;
+  }
+  if (row.destinationPending) {
+    view.destinationPending = true;
   }
   if (row.cancellationReason !== null && row.cancellationReason !== undefined) {
     view.cancellationReason = row.cancellationReason as CancellationReason;

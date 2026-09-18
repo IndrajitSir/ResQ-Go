@@ -40,6 +40,11 @@ export interface AmbulanceView {
   serviceArea: string;
   status: AmbulanceStatus;
   createdAt: string;
+  /** Public id of the crew member currently attached to this vehicle, when known. */
+  assignedDriverPublicId?: string;
+  assignedDriverName?: string;
+  /** Straight-line distance to the booking being dispatched, in kilometres. */
+  distanceKm?: number;
 }
 
 export interface LocationView {
@@ -62,6 +67,11 @@ export interface BookingView {
   requesterPublicId: string;
   assignedAmbulancePublicId?: string;
   assignedDriverPublicId?: string;
+  /**
+   * True when the requester did not know the receiving facility (typical for an
+   * emergency request raised in one tap). Dispatch must confirm the destination.
+   */
+  destinationPending?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -75,6 +85,42 @@ export interface TripView {
   arrivedAt?: string;
   onboardedAt?: string;
   completedAt?: string;
+}
+
+/** Contact details the requester may use while a crew is assigned to their trip. */
+export interface AssignedCrewView {
+  driverPublicId: string;
+  driverName: string;
+  driverPhone: string;
+  ambulancePublicId: string;
+  ambulanceRegistrationNumber: string;
+  ambulanceType: AmbulanceType;
+  ambulanceStatus: AmbulanceStatus;
+  driverAvailability: DriverAvailabilityStatus;
+}
+
+/** Latest known position of a vehicle on an active trip. */
+export interface TripLocationView {
+  latitude: number;
+  longitude: number;
+  heading?: number;
+  speedKph?: number;
+  recordedAt: string;
+}
+
+/**
+ * Everything a requester, crew member, or operator may see about one booking,
+ * including live progress towards the pickup point.
+ */
+export interface BookingDetailView {
+  booking: BookingView;
+  trip?: TripView;
+  crew?: AssignedCrewView;
+  liveLocation?: TripLocationView;
+  /** Straight-line remaining distance to the next milestone, in kilometres. */
+  distanceRemainingKm?: number;
+  /** Estimated minutes to the next milestone, based on current speed. */
+  etaMinutes?: number;
 }
 
 export interface BookingEventView {
@@ -100,4 +146,27 @@ export interface NotificationView {
 export interface AccessTokenPayload {
   sub: string; // user public id
   role: UserRole;
+}
+
+/**
+ * Server-sent events pushed to connected clients. Events are notifications of
+ * state changes; REST remains the source of truth (see docs/DESIGN.md).
+ */
+export type RealtimeEventType =
+  | 'booking.status_changed'
+  | 'booking.assigned'
+  | 'booking.destination_set'
+  | 'trip.decision'
+  | 'trip.location'
+  | 'notification.created';
+
+export interface RealtimeEvent {
+  type: RealtimeEventType;
+  /** Booking this event belongs to, when applicable. */
+  bookingPublicId?: string;
+  tripPublicId?: string;
+  status?: BookingStatus;
+  location?: TripLocationView;
+  message?: string;
+  at: string;
 }

@@ -1,17 +1,19 @@
-import { Body, Controller, Get, Param, Post, Query, Request } from '@nestjs/common';
+import { Body, Controller, Get, HttpStatus, HttpCode, Param, Post, Query, Request } from '@nestjs/common';
 import {
   cancelBookingSchema,
   createBookingSchema,
   listBookingsQuerySchema,
+  setDestinationSchema,
   type CancelBookingDto,
   type CreateBookingDto,
   type ListBookingsQuery,
+  type SetDestinationDto,
 } from '@abs/contracts';
-import type { Request } from 'express';
+import type { Request as ExpressRequest } from 'express';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
-import { PATIENT_ONLY } from '../common/auth/role-sets';
+import { OPERATOR_ROLES, PATIENT_ONLY } from '../common/auth/role-sets';
 import type { AuthUser } from '../common/auth/auth-user';
 import { BookingsService } from './bookings.service';
 
@@ -24,7 +26,7 @@ export class BookingsController {
   create(
     @Body(new ZodValidationPipe(createBookingSchema)) dto: CreateBookingDto,
     @CurrentUser() user: AuthUser,
-    @Request() request: Request,
+    @Request() request: ExpressRequest,
   ): Promise<Awaited<ReturnType<BookingsService['create']>>> {
     return this.bookingsService.create(dto, user!, request.requestId ?? '');
   }
@@ -50,9 +52,22 @@ export class BookingsController {
     @Param('publicId') publicId: string,
     @Body(new ZodValidationPipe(cancelBookingSchema)) dto: CancelBookingDto,
     @CurrentUser() user: AuthUser,
-    @Request() request: Request,
+    @Request() request: ExpressRequest,
   ): Promise<Awaited<ReturnType<BookingsService['cancel']>>> {
     return this.bookingsService.cancel(publicId, dto, user!, request.requestId ?? '');
+  }
+
+  /** Dispatch confirms the receiving facility for emergency requests. */
+  @Post(':publicId/destination')
+  @HttpCode(HttpStatus.OK)
+  @Roles(...OPERATOR_ROLES)
+  async setDestination(
+    @Param('publicId') publicId: string,
+    @Body(new ZodValidationPipe(setDestinationSchema)) dto: SetDestinationDto,
+    @CurrentUser() user: AuthUser,
+    @Request() request: ExpressRequest,
+  ): Promise<Awaited<ReturnType<BookingsService['setDestination']>>> {
+    return this.bookingsService.setDestination(publicId, dto, user!, request.requestId ?? '');
   }
 
   @Get(':publicId/events')

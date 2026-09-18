@@ -2,17 +2,22 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import {
   assertTransition,
+  type AmbulanceType,
   type AssignmentDecisionDto,
   type BookingView,
+  type TripLocationDto,
+  type TripLocationView,
   type TripStatusUpdateDto,
   type TripView,
 } from '@abs/contracts';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApiException } from '../common/errors/api-exception';
 import { forbidden } from '../common/auth/role-sets';
-import { mapBooking, mapTrip, type BookingRow, type TripRow } from '../common/mappers';
+import { mapBooking, mapTrip, mapTripLocation, type BookingRow, type TripRow } from '../common/mappers';
+import { estimateMinutes, haversineKm, roundKm } from '../common/geo';
 import type { AuthUser } from '../common/auth/auth-user';
 import { NotificationsService } from '../notifications/notifications.service';
+import { RealtimeService } from '../realtime/realtime.service';
 
 const TRIP_STATUS_TO_BOOKING: Record<TripStatusUpdateDto['status'], TripStatusUpdateDto['status']> = {
   DRIVER_EN_ROUTE: 'DRIVER_EN_ROUTE',
@@ -25,9 +30,20 @@ const TRIP_STATUS_TO_BOOKING: Record<TripStatusUpdateDto['status'], TripStatusUp
 
 const OPERATOR_ROLES = new Set(['DISPATCHER', 'ADMIN', 'SUPER_ADMIN']);
 
+/** Bookings whose trip can still receive telemetry. */
+const TRACKABLE_STATUSES = new Set(['ASSIGNED', 'DRIVER_EN_ROUTE', 'ARRIVED', 'PATIENT_ONBOARD', 'IN_TRANSIT']);
+
 export interface TripWithBooking {
   trip: TripView;
   booking: BookingView;
+  /** Vehicle identity, so the crew can confirm what they have been given. */
+  vehicle: { registrationNumber: string; type: AmbulanceType };
+}
+
+export interface LiveTripProgress {
+  location?: TripLocationView;
+  distanceRemainingKm?: number;
+  etaMinutes?: number;
 }
 
 @Injectable()
@@ -35,6 +51,7 @@ export class TripsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    private readonly realtime: RealtimeService,
   ) {}
 
   async mine(userPublicId: string): Promise<TripWithBooking[]> {
@@ -45,15 +62,12 @@ export class TripsService {
         booking: {
           include: { requester: { select: { publicId: true } } },
         },
-        ambulance: { select: { publicId: true } },
+        ambulance: { select: { publicId: true, registrationNumber: true, type: true } },
         driver: { select: { publicId: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
-    return trips.map((trip) => ({
-      trip: mapTrip(trip),
-      booking: mapBooking(trip.booking),
-    }));
+    return trips.map((trip) => this.toTripWithBooking(trip));
   }
 
   async decide(
@@ -66,7 +80,7 @@ export class TripsService {
       include: {
         booking: true,
         ambulance: { select: { id: true } },
-        driver: { select: { id: true } },
+        driver: { select: { id: true, publicId: true } },
       },
     });
     if (!trip) {
@@ -123,6 +137,14 @@ export class TripsService {
         )
         .catch(() => undefined);
 
+      // Dispatch must see the request come back into the queue immediately.
+      this.realtime.publishToOperators({
+        type: 'trip.decision',
+        bookingPublicId: booking.publicId,
+        status: 'SEARCHING',
+        message: `Crew declined booking ${booking.publicId} — awaiting reassignment.`,
+      });
+
       return this.loadResult(updated.publicId);
     }
 
@@ -165,6 +187,18 @@ export class TripsService {
       )
       .catch(() => undefined);
 
+    this.realtime.publish(      {
+        userPublicIds: [await this.requesterPublicId(booking.requesterId)],
+        roles: ['DISPATCHER', 'ADMIN', 'SUPER_ADMIN'],
+      },
+      {
+        type: 'trip.decision',
+        bookingPublicId: booking.publicId,
+        status: 'ASSIGNED',
+        message: `Crew accepted booking ${booking.publicId}.`,
+      },
+    );
+
     return this.loadResult(booking.publicId);
   }
 
@@ -178,7 +212,7 @@ export class TripsService {
       include: {
         booking: true,
         ambulance: { select: { id: true } },
-        driver: { select: { id: true } },
+        driver: { select: { id: true, publicId: true } },
       },
     });
     if (!trip) {
@@ -217,7 +251,7 @@ export class TripsService {
         data: {
           publicId: randomUUID(),
           bookingId: booking.id,
-          type: 'TRIP_STATUS_CHANGED',
+          type: dto.status === 'COMPLETED' ? 'BOOKING_COMPLETED' : 'TRIP_STATUS_CHANGED',
           previousStatus: booking.status,
           newStatus: target,
           actorPublicId: user.publicId,
@@ -238,7 +272,99 @@ export class TripsService {
         .catch(() => undefined);
     }
 
+    this.realtime.publish(
+      {
+        userPublicIds: [trip.driver.publicId, await this.requesterPublicId(booking.requesterId)],
+        roles: ['DISPATCHER', 'ADMIN', 'SUPER_ADMIN'],
+      },
+      {
+        type: 'booking.status_changed',
+        bookingPublicId: booking.publicId,
+        tripPublicId: trip.publicId,
+        status: target,
+        message: `Trip status is now ${target}.`,
+      },
+    );
+
     return this.loadResult(updatedBooking.publicId);
+  }
+
+  /**
+   * Records a driver position ping for an active trip and pushes it to the
+   * people entitled to see it (the requester, operators, and the crew).
+   */
+  async recordLocation(
+    tripPublicId: string,
+    dto: TripLocationDto,
+    user: AuthUser,
+  ): Promise<LiveTripProgress> {
+    const trip = await this.prisma.trip.findUnique({
+      where: { publicId: tripPublicId },
+      include: {
+        booking: {
+          select: {
+            publicId: true,
+            status: true,
+            requesterId: true,
+            pickupLatitude: true,
+            pickupLongitude: true,
+            destLatitude: true,
+            destLongitude: true,
+          },
+        },
+        driver: { select: { publicId: true, id: true } },
+        ambulance: { select: { status: true } },
+      },
+    });
+    if (!trip) {
+      throw new ApiException('NOT_FOUND', HttpStatus.NOT_FOUND, 'Trip not found');
+    }
+    if (trip.driver.publicId !== user.publicId) {
+      throw forbidden();
+    }
+    if (!TRACKABLE_STATUSES.has(trip.booking.status)) {
+      throw new ApiException(
+        'CONFLICT',
+        HttpStatus.CONFLICT,
+        `Location updates are only accepted while the trip is active (current: ${trip.booking.status})`,
+      );
+    }
+
+    const row = await this.prisma.tripLocation.create({
+      data: {
+        tripId: trip.id,
+        latitude: dto.latitude,
+        longitude: dto.longitude,
+        heading: dto.heading ?? null,
+        speedKph: dto.speedKph ?? null,
+      },
+    });
+    const location = mapTripLocation(row);
+
+    // Progress towards the next milestone, so both the crew and the requester
+    // see the same numbers the API reports on the booking detail endpoint.
+    const headingToDestination =
+      trip.booking.status === 'IN_TRANSIT' || trip.booking.status === 'PATIENT_ONBOARD';
+    const milestone = headingToDestination
+      ? { latitude: trip.booking.destLatitude, longitude: trip.booking.destLongitude }
+      : { latitude: trip.booking.pickupLatitude, longitude: trip.booking.pickupLongitude };
+    const distanceRemainingKm = roundKm(haversineKm(location, milestone));
+    const etaMinutes = estimateMinutes(distanceRemainingKm, location.speedKph);
+
+    this.realtime.publish(
+      {
+        userPublicIds: [trip.driver.publicId, await this.requesterPublicId(trip.booking.requesterId)],
+        roles: ['DISPATCHER', 'ADMIN', 'SUPER_ADMIN'],
+      },
+      {
+        type: 'trip.location',
+        bookingPublicId: trip.booking.publicId,
+        tripPublicId: trip.publicId,
+        location,
+      },
+    );
+
+    return { location, distanceRemainingKm, etaMinutes };
   }
 
   async findOne(tripPublicId: string, user: AuthUser): Promise<TripWithBooking> {
@@ -246,7 +372,7 @@ export class TripsService {
       where: { publicId: tripPublicId },
       include: {
         booking: { include: { requester: { select: { publicId: true } } } },
-        ambulance: { select: { publicId: true } },
+        ambulance: { select: { publicId: true, registrationNumber: true, type: true } },
         driver: { select: { publicId: true } },
       },
     });
@@ -260,7 +386,35 @@ export class TripsService {
     if (!allowed) {
       throw forbidden();
     }
-    return { trip: mapTrip(trip), booking: mapBooking(trip.booking) };
+    return this.toTripWithBooking(trip);
+  }
+
+  private toTripWithBooking(trip: {
+    publicId: string;
+    booking: { publicId: string } & BookingRow;
+    ambulance: { publicId: string; registrationNumber: string; type: string };
+    driver: { publicId: string };
+    acceptedAt: Date | null;
+    arrivedAt: Date | null;
+    onboardedAt: Date | null;
+    completedAt: Date | null;
+  }): TripWithBooking {
+    return {
+      trip: mapTrip(trip as TripRow),
+      booking: mapBooking(trip.booking),
+      vehicle: {
+        registrationNumber: trip.ambulance.registrationNumber,
+        type: trip.ambulance.type as AmbulanceType,
+      },
+    };
+  }
+
+  private async requesterPublicId(requesterId: string): Promise<string> {
+    const requester = await this.prisma.user.findUnique({
+      where: { id: requesterId },
+      select: { publicId: true },
+    });
+    return requester?.publicId ?? '';
   }
 
   private async loadResult(bookingPublicId: string): Promise<TripWithBooking> {
@@ -271,7 +425,7 @@ export class TripsService {
         trip: {
           include: {
             booking: { select: { publicId: true } },
-            ambulance: { select: { publicId: true } },
+            ambulance: { select: { publicId: true, registrationNumber: true, type: true } },
             driver: { select: { publicId: true } },
           },
         },
@@ -280,11 +434,10 @@ export class TripsService {
     if (!booking || !booking.trip) {
       throw new ApiException('NOT_FOUND', HttpStatus.NOT_FOUND, 'Trip not found');
     }
-    const tripRow: TripRow = booking.trip;
-    return {
-      trip: mapTrip(tripRow),
-      booking: mapBooking(booking as BookingRow),
-    };
+    return { trip: mapTrip(booking.trip), booking: mapBooking(booking as BookingRow), vehicle: {
+      registrationNumber: booking.trip.ambulance.registrationNumber,
+      type: booking.trip.ambulance.type as AmbulanceType,
+    } };
   }
 
   private async requireUserId(userPublicId: string): Promise<string> {

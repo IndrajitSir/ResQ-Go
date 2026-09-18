@@ -3,16 +3,24 @@
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import type { BookingEventView, BookingView, CancellationReason, TripView } from '@abs/contracts';
+import dynamic from 'next/dynamic';
+import type { AssignedCrewView, BookingEventView, BookingView, CancellationReason, TripLocationView, TripView } from '@abs/contracts';
 import { ACTIVE_BOOKING_STATUSES, CANCELLATION_REASONS, canTransition } from '@abs/contracts';
 import { StatusBadge, UrgencyBadge } from '@/components/status-badge';
+
+const LiveMap = dynamic(() => import('@/components/live-map'), { ssr: false });
 import { RequireRole } from '@/lib/guards';
 import { apiFetch, isApiClientError } from '@/lib/api';
+import { useRealtime } from '@/lib/use-realtime';
 import { CANCELLATION_REASON_LABELS, formatDate, shortId, statusLabel } from '@/lib/format';
 
 interface DetailPayload {
   booking: BookingView;
   trip?: TripView;
+  crew?: AssignedCrewView;
+  liveLocation?: TripLocationView;
+  distanceRemainingKm?: number;
+  etaMinutes?: number;
 }
 
 const EVENT_LABELS: Record<string, string> = {
@@ -74,17 +82,30 @@ function DetailContent() {
     void load();
   }, [load]);
 
-  // Poll every 8s while the booking is in an active status and the tab is visible.
+  // Real-time: SSE pushes trigger a silent re-fetch so the UI stays current
+  // without the 8-second poll. We keep a fallback poll for browsers that
+  // can't do EventSource (very rare) and as a safety net.
+  const { connected: sseConnected, events: rtEvents } = useRealtime(publicId);
   const statusActive = detail ? ACTIVE_BOOKING_STATUSES.includes(detail.booking.status) : false;
   useEffect(() => {
     if (!statusActive) return;
+    // Fallback poll every 20s (SSE handles the fast path).
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible') {
         void load(true);
       }
-    }, 8000);
+    }, 20000);
     return () => clearInterval(interval);
   }, [statusActive, load]);
+
+  // Re-fetch whenever SSE delivers a new event for this booking.
+  const prevEventCount = useRef(0);
+  useEffect(() => {
+    if (rtEvents.length > prevEventCount.current) {
+      prevEventCount.current = rtEvents.length;
+      void load(true);
+    }
+  }, [rtEvents, load]);
 
   async function handleCancel() {
     if (!detail) return;
@@ -117,6 +138,7 @@ function DetailContent() {
           <div className="skeleton" style={{ width: '50%' }} />
           <div className="skeleton" />
           <div className="skeleton" style={{ width: '80%' }} />
+          <div className="skeleton" style={{ width: '40%' }} />
         </div>
       </div>
     );
@@ -155,6 +177,9 @@ function DetailContent() {
           </span>
           <StatusBadge status={booking.status} />
           <UrgencyBadge urgency={booking.urgency} />
+          {sseConnected && statusActive && (
+            <span className="live-dot" aria-label="Live updates connected" />
+          )}
         </div>
         <div className="route-summary" style={{ marginTop: '0.75rem' }}>
           <div className="route-stop">
@@ -174,6 +199,55 @@ function DetailContent() {
             </span>
           </div>
         </div>
+        {booking.destinationPending && (
+          <div className="alert" style={{ marginTop: '0.75rem' }}>
+            <strong>Destination pending</strong> — dispatch is confirming the receiving facility. Your ambulance is on the way.
+          </div>
+        )}
+
+        {/* Live map — shows when there's a trip and the crew is en route or beyond */}
+        {trip && detail.liveLocation && (
+          <div style={{ marginTop: '0.75rem' }}>
+            <LiveMap
+              pickupLatitude={booking.pickup.latitude}
+              pickupLongitude={booking.pickup.longitude}
+              pickupLabel={booking.pickup.label}
+              liveLocation={detail.liveLocation}
+            />
+          </div>
+        )}
+
+        {(detail.distanceRemainingKm != null || detail.etaMinutes != null) && (
+          <div className="tracking-strip" style={{ marginTop: '0.75rem' }}>
+            {detail.etaMinutes != null && (
+              <span className="tracking-stat">
+                <strong>{Math.round(detail.etaMinutes)} min</strong> ETA
+              </span>
+            )}
+            {detail.distanceRemainingKm != null && (
+              <span className="tracking-stat">
+                <strong>{detail.distanceRemainingKm.toFixed(1)} km</strong> remaining
+              </span>
+            )}
+          </div>
+        )}
+
+        {detail.crew && (
+          <div className="crew-card" style={{ marginTop: '0.75rem' }}>
+            <div className="crew-card-title">Assigned crew</div>
+            <div className="crew-card-detail">
+              <strong>{detail.crew.driverName}</strong>
+              {detail.crew.driverPhone && (
+                <a href={`tel:${detail.crew.driverPhone}`} className="btn btn-ghost btn-small">
+                  Call driver
+                </a>
+              )}
+            </div>
+            <div className="muted" style={{ marginTop: '0.25rem' }}>
+              {detail.crew.ambulanceRegistrationNumber} · {detail.crew.ambulanceType}
+            </div>
+          </div>
+        )}
         <div className="meta-row">
           <span>Type: {booking.requiredAmbulanceType}</span>
           <span aria-hidden="true">·</span>
@@ -251,19 +325,22 @@ function DetailContent() {
 
       {trip && (
         <div className="card">
-          <h2>Trip</h2>
-          <p className="pub-id">Trip {shortId(trip.publicId)}</p>
-          <div className="meta-row">
-            <span>Ambulance: {trip.ambulancePublicId ? shortId(trip.ambulancePublicId) : '—'}</span>
-            <span aria-hidden="true">·</span>
-            <span>Driver: {trip.driverPublicId ? shortId(trip.driverPublicId) : '—'}</span>
+          <h2>Trip progress</h2>
+          <div className="meta-row" style={{ marginTop: 0 }}>
+            {trip.acceptedAt && (
+              <span className={trip.completedAt ? 'step-done' : 'step-active'}>Accepted</span>
+            )}
+            {trip.arrivedAt && (
+              <span className={trip.completedAt ? 'step-done' : 'step-active'}>Arrived at pickup</span>
+            )}
+            {trip.onboardedAt && (
+              <span className={trip.completedAt ? 'step-done' : 'step-active'}>Patient on board</span>
+            )}
+            {trip.completedAt && (
+              <span className="step-done">Completed</span>
+            )}
           </div>
-          <div className="meta-row">
-            {trip.acceptedAt && <span>Accepted {formatDate(trip.acceptedAt)} UTC</span>}
-            {trip.arrivedAt && <span>Arrived {formatDate(trip.arrivedAt)} UTC</span>}
-            {trip.onboardedAt && <span>Patient on board {formatDate(trip.onboardedAt)} UTC</span>}
-            {trip.completedAt && <span>Completed {formatDate(trip.completedAt)} UTC</span>}
-          </div>
+
         </div>
       )}
 

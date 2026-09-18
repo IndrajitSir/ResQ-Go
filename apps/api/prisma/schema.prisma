@@ -51,6 +51,8 @@ model Ambulance {
   trips             Trip[]
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
+
+  @@index([status, type])
 }
 
 model Booking {
@@ -70,6 +72,8 @@ model Booking {
   urgency               String   @default("URGENT")
   notes                 String?
   status                String   @default("REQUESTED")
+  /// Emergency requests raised in one tap await an operator-confirmed destination.
+  destinationPending    Boolean  @default(false)
   cancellationReason    String?
   cancellationDetails   String?
   idempotencyKey        String?  @unique
@@ -100,8 +104,24 @@ model Trip {
   failedAt        DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+  locations       TripLocation[]
 
   @@index([driverId])
+}
+
+/// Vehicle telemetry for an active trip. Only the latest row per trip is used
+/// for live tracking and ETA; history is retained for incident review.
+model TripLocation {
+  id         String   @id @default(cuid())
+  tripId     String
+  trip       Trip     @relation(fields: [tripId], references: [id])
+  latitude   Float
+  longitude  Float
+  heading    Float?
+  speedKph   Float?
+  recordedAt DateTime @default(now())
+
+  @@index([tripId, recordedAt])
 }
 
 model BookingEvent {

@@ -7,6 +7,7 @@ import {
   DRIVER_AVAILABILITY_STATUSES,
   URGENCY_CATEGORIES,
   USER_ROLES,
+  VERIFICATION_STATUSES,
 } from './enums';
 
 /**
@@ -54,15 +55,53 @@ export const locationSchema = z.object({
   longitude: z.number().min(-180).max(180),
 });
 
-export const createBookingSchema = z.object({
-  idempotencyKey: z.string().uuid({ message: 'idempotencyKey must be a UUID' }),
-  pickup: locationSchema,
-  destination: locationSchema,
-  requiredAmbulanceType: z.enum(AMBULANCE_TYPES),
-  urgency: z.enum(URGENCY_CATEGORIES).default('URGENT'),
-  notes: z.string().trim().max(1000).optional(),
+/**
+ * A location the requester may not have described yet. Emergency requests are
+ * raised in one tap, so labels and addresses are filled server-side from the
+ * device coordinates and dispatch confirms the receiving facility.
+ */
+export const optionalLocationSchema = z.object({
+  label: z.string().trim().min(1).max(200).optional(),
+  address: z.string().trim().min(1).max(300).optional(),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
 });
+
+export const createBookingSchema = z
+  .object({
+    idempotencyKey: z.string().uuid({ message: 'idempotencyKey must be a UUID' }),
+    pickup: optionalLocationSchema,
+    destination: optionalLocationSchema.optional(),
+    requiredAmbulanceType: z.enum(AMBULANCE_TYPES),
+    urgency: z.enum(URGENCY_CATEGORIES).default('URGENT'),
+    notes: z.string().trim().max(1000).optional(),
+  })
+  .superRefine((value, ctx) => {
+    // Only emergency requests may be raised without describing the locations:
+    // they are expected to come from the one-tap flow, which shares device
+    // coordinates. Every other request must be explicit.
+    if (value.urgency === 'EMERGENCY') return;
+    if (!value.pickup.address) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['pickup', 'address'],
+        message: 'Tell us where to collect the patient',
+      });
+    }
+    if (!value.destination) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['destination'],
+        message: 'Choose a destination, or mark the request as an emergency',
+      });
+    }
+  });
 export type CreateBookingDto = z.infer<typeof createBookingSchema>;
+
+export const setDestinationSchema = z.object({
+  destination: locationSchema,
+});
+export type SetDestinationDto = z.infer<typeof setDestinationSchema>;
 
 export const cancelBookingSchema = z.object({
   reason: z.enum(CANCELLATION_REASONS),
@@ -94,10 +133,30 @@ export const tripStatusUpdateSchema = z.object({
 });
 export type TripStatusUpdateDto = z.infer<typeof tripStatusUpdateSchema>;
 
+/** Vehicle telemetry sent by the driver app while a trip is active. */
+export const tripLocationSchema = z.object({
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  heading: z.number().min(0).max(360).optional(),
+  speedKph: z.number().min(0).max(300).optional(),
+});
+export type TripLocationDto = z.infer<typeof tripLocationSchema>;
+
 export const driverAvailabilitySchema = z.object({
   status: z.enum(DRIVER_AVAILABILITY_STATUSES),
 });
 export type DriverAvailabilityDto = z.infer<typeof driverAvailabilitySchema>;
+
+export const driverVerificationSchema = z
+  .object({
+    identityVerification: z.enum(VERIFICATION_STATUSES).optional(),
+    licenseVerification: z.enum(VERIFICATION_STATUSES).optional(),
+  })
+  .refine(
+    (value) => value.identityVerification !== undefined || value.licenseVerification !== undefined,
+    { message: 'Provide at least one verification status' },
+  );
+export type DriverVerificationDto = z.infer<typeof driverVerificationSchema>;
 
 export const ambulanceSchema = z.object({
   registrationNumber: z
@@ -113,6 +172,15 @@ export const ambulanceSchema = z.object({
   baseLongitude: z.number().min(-180).max(180).optional(),
 });
 export type AmbulanceCreateDto = z.infer<typeof ambulanceSchema>;
+
+/**
+ * Attaches a crew member to a vehicle. `null` releases the vehicle back to the
+ * unassigned pool. An ambulance without a crew can never be dispatched.
+ */
+export const assignAmbulanceDriverSchema = z.object({
+  driverPublicId: z.string().min(1).nullable(),
+});
+export type AssignAmbulanceDriverDto = z.infer<typeof assignAmbulanceDriverSchema>;
 
 export const listBookingsQuerySchema = z.object({
   status: z.enum(BOOKING_STATUSES).optional(),

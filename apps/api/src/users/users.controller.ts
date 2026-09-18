@@ -1,5 +1,5 @@
 import { Controller, Get, Request } from '@nestjs/common';
-import type { Request } from 'express';
+import type { Request as ExpressRequest } from 'express';
 import { mapUser } from '../common/mappers';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -8,7 +8,7 @@ export class UsersController {
   constructor(private readonly prisma: PrismaService) {}
 
   @Get('me')
-  async me(@Request() request: Request) {
+  async me(@Request() request: ExpressRequest) {
     const user = await this.prisma.user.findUniqueOrThrow({
       where: { publicId: request.user!.publicId },
     });

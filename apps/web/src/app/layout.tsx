@@ -4,9 +4,9 @@ import { Nav } from '@/components/nav';
 import './globals.css';
 
 export const metadata = {
-  title: 'ABS — Ambulance Booking System',
+  title: 'Resq-Go — Ambulance Booking',
   description:
-    'Book and coordinate ambulance transport. For emergencies, always call your local emergency number first.',
+    'Book and track ambulance transport. For emergencies, always call your local emergency number first.',
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
@@ -25,8 +25,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             <footer className="site-footer">
               <div className="container">
                 <p style={{ margin: 0 }}>
-                  <strong>Emergency notice:</strong> ABS books and coordinates ambulance transport.
-                  It does <strong>not</strong> replace calling your local emergency number (e.g.
+                  <strong>Emergency notice:</strong>              Resq-Go books and coordinates ambulance transport. It does <strong>not</strong> replace calling your local emergency number (e.g.
                   911 / 112) in life-threatening situations.
                 </p>
               </div>

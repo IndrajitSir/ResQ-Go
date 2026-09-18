@@ -31,12 +31,16 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest<Request>();
+    // Accept token from Authorization header (normal API calls) or query param
+    // (EventSource SSE connections cannot set custom headers).
     const header = request.headers['authorization'];
-    if (typeof header !== 'string' || !header.startsWith(BEARER_PREFIX)) {
-      throw new UnauthorizedException('Missing or invalid authorization header');
+    let token: string | undefined;
+    if (typeof header === 'string' && header.startsWith(BEARER_PREFIX)) {
+      token = header.slice(BEARER_PREFIX.length).trim();
+    } else if (typeof request.query?.token === 'string' && request.query.token !== '') {
+      token = request.query.token;
     }
-    const token = header.slice(BEARER_PREFIX.length).trim();
-    if (token === '') {
+    if (!token) {
       throw new UnauthorizedException('Missing access token');
     }
 

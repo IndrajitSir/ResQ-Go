@@ -21,9 +21,8 @@ export function Nav() {
 
   return (
     <header className="nav">
-      <nav className="nav-inner" aria-label="Main navigation">
-        <Link href="/" className="nav-brand">
-          ABS — Ambulance Booking
+      <nav className="nav-inner" aria-label="Main navigation">          <Link href="/" className="nav-brand">
+          Resq-Go
         </Link>
         <ul className="nav-links">
           {user?.role === 'PATIENT' && (

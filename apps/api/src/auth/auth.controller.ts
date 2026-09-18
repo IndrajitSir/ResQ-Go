@@ -3,7 +3,7 @@ import { loginSchema, registerSchema, type LoginDto, type RegisterDto } from '@a
 import { Public } from '../common/decorators/public.decorator';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { AuthService, type AuthResult } from './auth.service';
-import type { Request } from 'express';
+import type { Request as ExpressRequest } from 'express';
 
 @Controller('auth')
 export class AuthController {
@@ -22,14 +22,14 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async login(
     @Body(new ZodValidationPipe(loginSchema)) dto: LoginDto,
-    @Request() request: Request,
+    @Request() request: ExpressRequest,
   ): Promise<AuthResult> {
     const ip = request.ip ?? 'unknown';
     return this.authService.login(dto, ip);
   }
 
   @Get('me')
-  async me(@Request() request: Request): Promise<Awaited<ReturnType<AuthService['me']>>> {
+  async me(@Request() request: ExpressRequest): Promise<Awaited<ReturnType<AuthService['me']>>> {
     return this.authService.me(request.user!.publicId);
   }
 }
