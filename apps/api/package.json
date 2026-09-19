@@ -6,13 +6,16 @@
   "scripts": {
     "start": "node dist/main.js",
     "dev": "nest start --watch",
-    "prebuild": "npm run build --workspace @abs/contracts && npm run build --workspace @abs/config",
+    "postinstall": "prisma generate",
+    "prebuild": "npm run prisma:generate && npm run build --workspace @abs/contracts && npm run build --workspace @abs/config",
+    "prisma:generate": "prisma generate",
     "build": "nest build",
     "test": "jest",
     "test:watch": "jest --watch",
     "seed": "node scripts/with-env.mjs ts-node prisma/seed.ts",
     "db:push": "node scripts/with-env.mjs prisma db push",
-    "migrate": "node scripts/with-env.mjs prisma migrate dev"
+    "migrate": "node scripts/with-env.mjs prisma migrate dev",
+    "db:deploy": "npm run db:push && npm run seed"
   },
   "dependencies": {
     "@abs/config": "*",

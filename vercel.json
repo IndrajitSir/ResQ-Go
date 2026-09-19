@@ -1,0 +1,5 @@
+{
+  "buildCommand": "npm run build --workspace @abs/contracts && npm run build --workspace @abs/web",
+  "outputDirectory": "apps/web/.next",
+  "installCommand": "npm install"
+}
