@@ -12,11 +12,10 @@ coverage/
 .env
 .env.local
 .env.*.local
-
+.env.prod
 # Prisma
-apps/api/prisma/dev.db
-apps/api/prisma/dev.db-journal
-apps/api/prisma/*.sqlite
+apps/api/prisma/*.db
+apps/api/prisma/*.db-journal
 
 # Logs
 logs/

@@ -1,8 +1,10 @@
 version: "3.9"
 
-# Local development dependencies. Docker is OPTIONAL: the API defaults to
-# SQLite for local development. Use this file when you want to run
-# PostgreSQL/Redis locally, or for staging-like environments.
+# Local development PostgreSQL. Use this file when you want to run
+# PostgreSQL locally for development instead of relying on a remote instance.
+#
+# Production uses Render-managed PostgreSQL (see .env.prod).
+# Real-time pub/sub uses Upstash Redis (no self-hosted Redis required).
 
 services:
   postgres:
@@ -17,16 +19,6 @@ services:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-abs}"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 10

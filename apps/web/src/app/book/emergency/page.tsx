@@ -227,7 +227,7 @@ function EmergencyForm() {
         </a>
         <p className="emergency-note">
           For life-threatening emergencies, always call your local emergency number first.
-          ABS books and coordinates ambulance transport — it does not replace 911 / 112.
+          ResQ-Go books and coordinates ambulance transport — it does not replace 911 / 112.
         </p>
       </div>
     </>

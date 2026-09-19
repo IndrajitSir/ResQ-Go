@@ -1,7 +1,7 @@
 import type { UserView } from '@abs/contracts';
 
-const TOKEN_KEY = 'abs.auth.token';
-const USER_KEY = 'abs.auth.user';
+const TOKEN_KEY = 'resqgo.auth.token';
+const USER_KEY = 'resqgo.auth.user';
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1';
 
@@ -76,7 +76,7 @@ interface ApiFetchOptions {
   auth?: boolean;
 }
 
-/** Typed fetch against the ABS API. Unwraps { data }, throws ApiClientError. */
+/** Typed fetch against the ResQ-Go API. Unwraps { data }, throws ApiClientError. */
 export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
   const { method = 'GET', body, auth = true } = options;
 

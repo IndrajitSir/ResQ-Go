@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 
-const SESSION_KEY = 'abs.disclaimer.dismissed';
+const SESSION_KEY = 'resqgo.disclaimer.dismissed';
 
 /**
  * Prominent emergency disclaimer. Dismissible once per browser session
@@ -25,7 +25,7 @@ export function DisclaimerBanner() {
 
   return (
     <section className="alert alert-warning" role="note" aria-label="Emergency disclaimer">
-      <strong>This is not an emergency call service.</strong> ABS books and coordinates ambulance
+      <strong>This is not an emergency call service.</strong> ResQ-Go books and coordinates ambulance
       transport. In a life-threatening situation, call your local emergency number (such as 911
       or 112) immediately — do not wait for a booking to be processed here.
       <div className="btn-row" style={{ marginTop: '0.5rem' }}>

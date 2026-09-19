@@ -1,0 +1,61 @@
+# Render Blueprint — ResQ-Go
+#
+# On first creation, Render provisions:
+#   - A PostgreSQL database (persistent)
+#   - A Web Web Service (Next.js on port 3000)
+#   - An API Web Service (NestJS on port 3001)
+#
+# Both services share secrets through the `envVars` blocks below.
+# Add APP_ID / API_ID pairs pointing at your existing services if
+# re-deploying to an already-provisioned environment.
+
+services:
+  # ---- API (NestJS) ----
+  - type: web
+    name: resq-go-api
+    runtime: node
+    plan: starter
+    region: oregon
+    buildCommand: npm run build --workspace @abs/api
+    startCommand: npm run db:deploy --workspace @abs/api && node apps/api/dist/main.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3001"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: resq-go-db
+          property: connectionString
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_EXPIRES_IN
+        value: "12h"
+      - key: JWT_REFRESH_EXPIRES_IN
+        value: "7d"
+      - key: BCRYPT_ROUNDS
+        value: "12"
+      - key: CORS_ORIGIN
+        sync: false
+
+  # ---- Web (Next.js) ----
+  - type: web
+    name: resq-go-web
+    runtime: node
+    plan: starter
+    region: oregon
+    buildCommand: npm run build --workspace @abs/web
+    startCommand: node apps/web/dist/server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_API_URL
+        value: https://resq-go-api.onrender.com/api/v1
+
+databases:
+  - name: resq-go-db
+    databaseName: resqgo
+    user: resqgo_user
+    plan: starter
+    region: oregon
+    ipAllowList: [] # only services in this blueprint may connect
