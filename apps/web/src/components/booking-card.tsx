@@ -1,61 +1,40 @@
 import Link from 'next/link';
 import type { BookingView } from '@abs/contracts';
-import { StatusBadge, UrgencyBadge } from '@/components/status-badge';
-import { formatDate, shortId } from '@/lib/format';
+import { RouteSummary, BookingMeta } from '@/components/ui';
 
 const TYPE_LABELS: Record<string, string> = {
-  BLS: 'BLS — basic life support',
-  ALS: 'ALS — advanced life support',
-  ICU: 'ICU — intensive care transport',
-  PATIENT_TRANSPORT: 'Patient transport (non-emergency)',
+  BLS: 'Basic life support',
+  ALS: 'Advanced life support',
+  ICU: 'Intensive care transport',
+  PATIENT_TRANSPORT: 'Patient transport',
 };
 
-export function BookingCard({ booking, linkToDetail = false }: { booking: BookingView; linkToDetail?: boolean }) {
-  const body = (
-    <>
-      <div className="meta-row" style={{ marginTop: 0 }}>
-        <span className="pub-id">{shortId(booking.publicId)}</span>
-        <StatusBadge status={booking.status} />
-        <UrgencyBadge urgency={booking.urgency} />
-      </div>
-      <div className="route-summary">
-        <div className="route-stop">
-          <span className="route-dot" aria-hidden="true" />
-          <span>
-            <span className="route-label">{booking.pickup.label}</span>
-            <br />
-            <span className="route-address">{booking.pickup.address}</span>
-          </span>
-        </div>
-        <div className="route-stop">
-          <span className="route-dot destination" aria-hidden="true" />
-          <span>
-            <span className="route-label">{booking.destination.label}</span>
-            <br />
-            <span className="route-address">{booking.destination.address}</span>
-          </span>
-        </div>
-      </div>
-      <div className="meta-row">
-        <span>{TYPE_LABELS[booking.requiredAmbulanceType] ?? booking.requiredAmbulanceType}</span>
-        <span aria-hidden="true">·</span>
-        <span>Requested {formatDate(booking.createdAt)} UTC</span>
-      </div>
-    </>
-  );
+interface BookingCardProps {
+  booking: BookingView;
+  /** Renders a "View details" affordance when true. */
+  linkToDetail?: boolean;
+}
 
-  if (linkToDetail) {
-    return (
-      <article className="card">
-        {body}
+export function BookingCard({ booking, linkToDetail = false }: BookingCardProps) {
+  return (
+    <article className={linkToDetail ? 'card card--interactive' : 'card'}>
+      <BookingMeta booking={booking} />
+      <RouteSummary booking={booking} />
+      {booking.destinationPending ? (
+        <p className="muted text-sm" style={{ marginTop: 0 }}>
+          Dispatch is confirming the receiving facility.
+        </p>
+      ) : null}
+      {linkToDetail ? (
         <div className="btn-row">
-          <Link className="btn btn-ghost btn-small" href={`/bookings/${booking.publicId}`}>
+          <Link className="btn btn-secondary btn-small" href={`/bookings/${booking.publicId}`}>
             View details
           </Link>
+          <span className="muted text-xs" style={{ alignSelf: 'center' }}>
+            {TYPE_LABELS[booking.requiredAmbulanceType] ?? booking.requiredAmbulanceType}
+          </span>
         </div>
-      </article>
-    );
-  }
-
-  return <article className="card">{body}</article>;
-}
+      ) : null}
+    </article>
+  );
+}

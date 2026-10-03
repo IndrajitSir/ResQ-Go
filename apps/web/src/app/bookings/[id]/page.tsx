@@ -4,11 +4,20 @@ import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
-import type { AssignedCrewView, BookingEventView, BookingView, CancellationReason, TripLocationView, TripView } from '@abs/contracts';
+import type {
+  AssignedCrewView,
+  BookingEventView,
+  BookingView,
+  CancellationReason,
+  TripLocationView,
+  TripView,
+} from '@abs/contracts';
 import { ACTIVE_BOOKING_STATUSES, CANCELLATION_REASONS, canTransition } from '@abs/contracts';
 import { StatusBadge, UrgencyBadge } from '@/components/status-badge';
+import { Alert, Card, EmptyState, RouteSummary, SkeletonList } from '@/components/ui';
 
 const LiveMap = dynamic(() => import('@/components/live-map'), { ssr: false });
+
 import { RequireRole } from '@/lib/guards';
 import { apiFetch, isApiClientError } from '@/lib/api';
 import { useRealtime } from '@/lib/use-realtime';
@@ -35,6 +44,14 @@ const EVENT_LABELS: Record<string, string> = {
   BOOKING_FAILED: 'Booking failed',
 };
 
+/** Ordered milestones, used to render the trip stepper. */
+const TRIP_STEPS: Array<{ key: keyof TripView; label: string }> = [
+  { key: 'acceptedAt', label: 'Crew accepted' },
+  { key: 'arrivedAt', label: 'Arrived at pickup' },
+  { key: 'onboardedAt', label: 'Patient on board' },
+  { key: 'completedAt', label: 'Completed' },
+];
+
 function DetailContent() {
   const params = useParams<{ id: string }>();
   const publicId = params.id;
@@ -51,6 +68,7 @@ function DetailContent() {
   const [acting, setActing] = useState(false);
 
   const prevStatusRef = useRef<string | null>(null);
+  const prevEventCount = useRef(0);
 
   const load = useCallback(
     async (silent = false) => {
@@ -62,6 +80,7 @@ function DetailContent() {
         }
         prevStatusRef.current = payload.booking.status;
         setDetail(payload);
+
         const eventList = await apiFetch<BookingEventView[]>(`/bookings/${publicId}/events`);
         setEvents(eventList);
         setError(null);
@@ -69,7 +88,7 @@ function DetailContent() {
         setError(
           isApiClientError(err)
             ? err.message
-            : 'Could not load the booking. Please try refreshing.',
+            : 'We could not load this booking. Please try again.',
         );
       } finally {
         setLoading(false);
@@ -82,30 +101,25 @@ function DetailContent() {
     void load();
   }, [load]);
 
-  // Real-time: SSE pushes trigger a silent re-fetch so the UI stays current
-  // without the 8-second poll. We keep a fallback poll for browsers that
-  // can't do EventSource (very rare) and as a safety net.
-  const { connected: sseConnected, events: rtEvents } = useRealtime(publicId);
+  // Server-sent events are the fast path; the poll is a safety net for
+  // browsers or proxies that drop the stream.
+  const { connected: sseConnected, events: realtimeEvents } = useRealtime(publicId);
   const statusActive = detail ? ACTIVE_BOOKING_STATUSES.includes(detail.booking.status) : false;
+
   useEffect(() => {
     if (!statusActive) return;
-    // Fallback poll every 20s (SSE handles the fast path).
-    const interval = setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        void load(true);
-      }
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void load(true);
     }, 20000);
-    return () => clearInterval(interval);
+    return () => window.clearInterval(interval);
   }, [statusActive, load]);
 
-  // Re-fetch whenever SSE delivers a new event for this booking.
-  const prevEventCount = useRef(0);
   useEffect(() => {
-    if (rtEvents.length > prevEventCount.current) {
-      prevEventCount.current = rtEvents.length;
+    if (realtimeEvents.length > prevEventCount.current) {
+      prevEventCount.current = realtimeEvents.length;
       void load(true);
     }
-  }, [rtEvents, load]);
+  }, [realtimeEvents, load]);
 
   async function handleCancel() {
     if (!detail) return;
@@ -124,7 +138,7 @@ function DetailContent() {
       await load(true);
     } catch (err) {
       setActionError(
-        isApiClientError(err) ? err.message : 'Could not cancel the booking. Please try again.',
+        isApiClientError(err) ? err.message : 'We could not cancel the booking. Please try again.',
       );
     } finally {
       setActing(false);
@@ -132,28 +146,22 @@ function DetailContent() {
   }
 
   if (loading && !detail) {
-    return (
-      <div role="status" aria-label="Loading booking">
-        <div className="card">
-          <div className="skeleton" style={{ width: '50%' }} />
-          <div className="skeleton" />
-          <div className="skeleton" style={{ width: '80%' }} />
-          <div className="skeleton" style={{ width: '40%' }} />
-        </div>
-      </div>
-    );
+    return <SkeletonList rows={1} label="Loading booking" />;
   }
 
   if (error && !detail) {
     return (
-      <div className="alert alert-error" role="alert" aria-live="assertive">
-        {error}
-        <div className="btn-row">
-          <button type="button" className="btn btn-ghost btn-small" onClick={() => void load()}>
+      <EmptyState
+        icon="inbox"
+        title="Booking unavailable"
+        action={
+          <button type="button" className="btn btn-secondary" onClick={() => void load()}>
             Try again
           </button>
-        </div>
-      </div>
+        }
+      >
+        {error}
+      </EmptyState>
     );
   }
 
@@ -164,90 +172,91 @@ function DetailContent() {
     (booking.status === 'REQUESTED' || booking.status === 'SEARCHING') &&
     canTransition(booking.status, 'CANCELLED_BY_PATIENT');
 
+  // Explicitly narrowing: `x != null` would also pass the project's eqeqeq rule
+  // only by accident, and these values are genuinely optional.
+  const etaMinutes = detail.etaMinutes ?? null;
+  const distanceRemainingKm = detail.distanceRemainingKm ?? null;
+  const hasEta = etaMinutes !== null;
+  const hasDistance = distanceRemainingKm !== null;
+
   return (
     <>
       <p aria-live="polite" className="visually-hidden">
         {liveMessage}
       </p>
 
-      <div className="card">
-        <div className="meta-row" style={{ marginTop: 0 }}>
-          <span className="pub-id" style={{ fontSize: '1rem' }}>
-            {shortId(booking.publicId, 12)}
-          </span>
+      <div className="page-header">
+        <div className="page-header__row">
+          <h1 className="page-title">Booking {shortId(booking.publicId, 12)}</h1>
           <StatusBadge status={booking.status} />
           <UrgencyBadge urgency={booking.urgency} />
-          {sseConnected && statusActive && (
-            <span className="live-dot" aria-label="Live updates connected" />
-          )}
-        </div>
-        <div className="route-summary" style={{ marginTop: '0.75rem' }}>
-          <div className="route-stop">
-            <span className="route-dot" aria-hidden="true" />
-            <span>
-              <span className="route-label">{booking.pickup.label}</span>
-              <br />
-              <span className="route-address">{booking.pickup.address}</span>
+          {sseConnected && statusActive ? (
+            <span className="badge badge-completed">
+              <span className="live-dot" style={{ marginLeft: 0 }} />
+              Live
             </span>
-          </div>
-          <div className="route-stop">
-            <span className="route-dot destination" aria-hidden="true" />
-            <span>
-              <span className="route-label">{booking.destination.label}</span>
-              <br />
-              <span className="route-address">{booking.destination.address}</span>
-            </span>
-          </div>
+          ) : null}
         </div>
-        {booking.destinationPending && (
-          <div className="alert" style={{ marginTop: '0.75rem' }}>
-            <strong>Destination pending</strong> — dispatch is confirming the receiving facility. Your ambulance is on the way.
-          </div>
-        )}
+      </div>
 
-        {/* Live map — shows when there's a trip and the crew is en route or beyond */}
-        {trip && detail.liveLocation && (
-          <div style={{ marginTop: '0.75rem' }}>
+      <Card>
+        <RouteSummary booking={booking} />
+
+        {booking.destinationPending ? (
+          <Alert tone="info" title="Destination pending">
+            Dispatch is confirming the receiving facility. Your crew is already being dispatched —
+            this does not hold up the trip.
+          </Alert>
+        ) : null}
+
+        {trip && detail.liveLocation ? (
+          <div style={{ marginTop: 'var(--space-4)' }}>
             <LiveMap
               pickupLatitude={booking.pickup.latitude}
               pickupLongitude={booking.pickup.longitude}
               pickupLabel={booking.pickup.label}
+              destinationLatitude={booking.destination.latitude}
+              destinationLongitude={booking.destination.longitude}
+              destinationLabel={booking.destination.label}
               liveLocation={detail.liveLocation}
             />
           </div>
-        )}
+        ) : null}
 
-        {(detail.distanceRemainingKm != null || detail.etaMinutes != null) && (
-          <div className="tracking-strip" style={{ marginTop: '0.75rem' }}>
-            {detail.etaMinutes != null && (
+        {hasDistance || hasEta ? (
+          <div className="tracking-strip" style={{ marginTop: 'var(--space-4)' }}>
+            {hasEta ? (
               <span className="tracking-stat">
-                <strong>{Math.round(detail.etaMinutes)} min</strong> ETA
+                <strong>{Math.round(etaMinutes)} min</strong>
+                estimated arrival
               </span>
-            )}
-            {detail.distanceRemainingKm != null && (
+            ) : null}
+            {hasDistance ? (
               <span className="tracking-stat">
-                <strong>{detail.distanceRemainingKm.toFixed(1)} km</strong> remaining
+                <strong>{(distanceRemainingKm as number).toFixed(1)} km</strong>
+                remaining
               </span>
-            )}
+            ) : null}
           </div>
-        )}
+        ) : null}
 
-        {detail.crew && (
-          <div className="crew-card" style={{ marginTop: '0.75rem' }}>
+        {detail.crew ? (
+          <div className="crew-card" style={{ marginTop: 'var(--space-4)' }}>
             <div className="crew-card-title">Assigned crew</div>
             <div className="crew-card-detail">
-              <strong>{detail.crew.driverName}</strong>
-              {detail.crew.driverPhone && (
-                <a href={`tel:${detail.crew.driverPhone}`} className="btn btn-ghost btn-small">
+              <span>{detail.crew.driverName}</span>
+              {detail.crew.driverPhone ? (
+                <a href={`tel:${detail.crew.driverPhone}`} className="btn btn-secondary btn-small">
                   Call driver
                 </a>
-              )}
+              ) : null}
             </div>
-            <div className="muted" style={{ marginTop: '0.25rem' }}>
+            <p className="muted text-sm" style={{ margin: 'var(--space-2) 0 0' }}>
               {detail.crew.ambulanceRegistrationNumber} · {detail.crew.ambulanceType}
-            </div>
+            </p>
           </div>
-        )}
+        ) : null}
+
         <div className="meta-row">
           <span>Type: {booking.requiredAmbulanceType}</span>
           <span aria-hidden="true">·</span>
@@ -255,30 +264,38 @@ function DetailContent() {
           <span aria-hidden="true">·</span>
           <span>Updated {formatDate(booking.updatedAt)} UTC</span>
         </div>
-        {booking.notes && <p className="muted">Notes: {booking.notes}</p>}
-        {booking.cancellationReason && (
+
+        {booking.notes ? (
+          <p className="muted" style={{ marginTop: 'var(--space-3)' }}>
+            <strong className="strong">Notes for the crew:</strong> {booking.notes}
+          </p>
+        ) : null}
+
+        {booking.cancellationReason ? (
           <p className="muted">
-            Cancellation reason: {CANCELLATION_REASON_LABELS[booking.cancellationReason] ?? booking.cancellationReason}
+            Cancellation reason:{' '}
+            {CANCELLATION_REASON_LABELS[booking.cancellationReason] ?? booking.cancellationReason}
             {booking.cancellationDetails ? ` — ${booking.cancellationDetails}` : ''}
           </p>
-        )}
+        ) : null}
 
-        {canCancel && !showCancel && (
+        {canCancel && !showCancel ? (
           <div className="btn-row">
             <button type="button" className="btn btn-danger" onClick={() => setShowCancel(true)}>
               Cancel booking
             </button>
           </div>
-        )}
+        ) : null}
 
-        {showCancel && (
-          <div style={{ marginTop: '1rem' }}>
+        {showCancel ? (
+          <div style={{ marginTop: 'var(--space-5)' }}>
             <h3>Cancel this booking</h3>
+            {actionError ? <Alert tone="error">{actionError}</Alert> : null}
             <label className="field">
               <span>Reason</span>
               <select
                 value={cancelReason}
-                onChange={(e) => setCancelReason(e.target.value as CancellationReason)}
+                onChange={(event) => setCancelReason(event.target.value as CancellationReason)}
               >
                 {CANCELLATION_REASONS.map((reason) => (
                   <option key={reason} value={reason}>
@@ -291,16 +308,11 @@ function DetailContent() {
               <span>Details (optional)</span>
               <textarea
                 value={cancelDetails}
-                onChange={(e) => setCancelDetails(e.target.value)}
+                onChange={(event) => setCancelDetails(event.target.value)}
                 maxLength={500}
                 placeholder="Anything dispatch should know…"
               />
             </label>
-            {actionError && (
-              <div className="alert alert-error" role="alert" aria-live="assertive">
-                {actionError}
-              </div>
-            )}
             <div className="btn-row">
               <button
                 type="button"
@@ -312,7 +324,7 @@ function DetailContent() {
               </button>
               <button
                 type="button"
-                className="btn btn-ghost"
+                className="btn btn-secondary"
                 onClick={() => setShowCancel(false)}
                 disabled={acting}
               >
@@ -320,31 +332,30 @@ function DetailContent() {
               </button>
             </div>
           </div>
-        )}
-      </div>
+        ) : null}
+      </Card>
 
-      {trip && (
-        <div className="card">
+      {trip ? (
+        <Card>
           <h2>Trip progress</h2>
-          <div className="meta-row" style={{ marginTop: 0 }}>
-            {trip.acceptedAt && (
-              <span className={trip.completedAt ? 'step-done' : 'step-active'}>Accepted</span>
-            )}
-            {trip.arrivedAt && (
-              <span className={trip.completedAt ? 'step-done' : 'step-active'}>Arrived at pickup</span>
-            )}
-            {trip.onboardedAt && (
-              <span className={trip.completedAt ? 'step-done' : 'step-active'}>Patient on board</span>
-            )}
-            {trip.completedAt && (
-              <span className="step-done">Completed</span>
-            )}
-          </div>
+          <ol className="trip-steps">
+            {TRIP_STEPS.map((step) => {
+              const reached = Boolean(trip[step.key]);
+              const isLast = step.key === 'completedAt';
+              const done = reached && isLast;
+              return (
+                <li key={step.key} data-reached={reached ? 'true' : 'false'}>
+                  <span className={`step-${reached ? (done ? 'done' : 'active') : 'pending'}`}>
+                    {step.label}
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
+        </Card>
+      ) : null}
 
-        </div>
-      )}
-
-      <div className="card">
+      <Card>
         <h2>Event history</h2>
         {events.length === 0 ? (
           <p className="muted">No events recorded yet.</p>
@@ -353,18 +364,18 @@ function DetailContent() {
             {[...events].reverse().map((event) => (
               <li key={event.publicId}>
                 <strong>{EVENT_LABELS[event.type] ?? event.type}</strong>
-                {event.previousStatus && event.newStatus && (
+                {event.previousStatus && event.newStatus ? (
                   <span className="muted">
                     {' '}
                     ({statusLabel(event.previousStatus)} → {statusLabel(event.newStatus)})
                   </span>
-                )}
+                ) : null}
                 <span className="timeline-time">{formatDate(event.createdAt)} UTC</span>
               </li>
             ))}
           </ol>
         )}
-      </div>
+      </Card>
 
       <p>
         <Link href="/bookings">← Back to bookings</Link>
@@ -379,4 +390,4 @@ export default function BookingDetailPage() {
       <DetailContent />
     </RequireRole>
   );
-}
+}

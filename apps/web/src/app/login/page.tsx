@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 import { useAuth } from '@/components/auth-context';
+import { Alert } from '@/components/ui';
 import { isApiClientError } from '@/lib/api';
 
 function redirectPathFor(role: string): string {
@@ -53,14 +54,11 @@ export default function LoginPage() {
   }
 
   return (
-    <section style={{ maxWidth: 440, margin: '2rem auto' }}>
+    <section className="auth-layout">
       <h1 className="page-title">Log in</h1>
+      <p className="subtitle">Sign in to your patient, driver or dispatch console.</p>
       <form className="card" onSubmit={handleSubmit} noValidate>
-        {error && (
-          <div className="alert alert-error" role="alert" aria-live="assertive">
-            {error}
-          </div>
-        )}
+        {error ? <Alert tone="error">{error}</Alert> : null}
         <label className="field">
           <span>Email</span>
           <input
@@ -97,7 +95,7 @@ export default function LoginPage() {
             </span>
           )}
         </label>
-        <button type="submit" className="btn btn-primary" disabled={submitting}>
+        <button type="submit" className="btn btn-primary btn-block" disabled={submitting}>
           {submitting ? 'Signing in…' : 'Sign in'}
         </button>
         <p className="muted" style={{ marginTop: '1rem' }}>
@@ -105,12 +103,12 @@ export default function LoginPage() {
         </p>
       </form>
 
-      <div className="card" aria-label="Demo accounts">
-        <h2 style={{ fontSize: '1rem' }}>Demo accounts (seeded data)</h2>
-        <p className="muted" style={{ margin: '0.25rem 0 0.5rem' }}>
-          For local development only — synthetic accounts:
+      <div className="card panel" aria-label="Demo accounts">
+        <h2 style={{ fontSize: 'var(--text-md)' }}>Demo accounts</h2>
+        <p className="muted text-sm" style={{ margin: '0.25rem 0 0.5rem' }}>
+          Synthetic accounts created by the seed script. Local development only.
         </p>
-        <ul style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.9rem' }}>
+        <ul style={{ margin: 0, paddingLeft: '1.25rem', fontSize: 'var(--text-sm)' }}>
           <li>
             Patient: <span className="mono">patient@example.com</span> /{' '}
             <span className="mono">Patient#2024</span>

@@ -1,17 +1,21 @@
 import { Controller, Get, Request } from '@nestjs/common';
 import type { Request as ExpressRequest } from 'express';
-import { mapUser } from '../common/mappers';
-import { PrismaService } from '../prisma/prisma.service';
+import type { UserView } from '@abs/contracts';
+import { AuthService } from '../auth/auth.service';
 
+/**
+ * Current-user lookup.
+ *
+ * Delegates to AuthService.me so a deleted or deactivated account produces the
+ * same 401 as everywhere else, instead of Prisma's not-found exception
+ * bubbling up as an opaque 500.
+ */
 @Controller('users')
 export class UsersController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly authService: AuthService) {}
 
   @Get('me')
-  async me(@Request() request: ExpressRequest) {
-    const user = await this.prisma.user.findUniqueOrThrow({
-      where: { publicId: request.user!.publicId },
-    });
-    return mapUser(user);
+  me(@Request() request: ExpressRequest): Promise<UserView> {
+    return this.authService.me(request.user!.publicId);
   }
-}
+}

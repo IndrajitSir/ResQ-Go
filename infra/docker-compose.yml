@@ -1,27 +1,41 @@
-version: "3.9"
-
-# Local development PostgreSQL. Use this file when you want to run
-# PostgreSQL locally for development instead of relying on a remote instance.
+# ============================================================================
+# ResQ-Go — database only
+# ============================================================================
 #
-# Production uses Render-managed PostgreSQL (see .env.prod).
-# Real-time pub/sub uses Upstash Redis (no self-hosted Redis required).
+# Convenience file for the "run the app on my machine, database in Docker"
+# workflow. For the full stack (API + web + database, built from the production
+# Dockerfiles) use the repository root `docker-compose.yml` instead.
+#
+#   docker compose -f infra/docker-compose.yml up -d postgres
+#   npm run db:push
+#   npm run db:seed
+#   npm run dev:api     # http://localhost:3001
+#   npm run dev:web     # http://localhost:3000
+#
+# The credentials match the root compose file and the integration test suite.
+# Production uses Render-managed PostgreSQL, not this file.
+# ============================================================================
+
+name: resq-go-db
 
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-abs}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-abs_dev_password}
       POSTGRES_DB: ${POSTGRES_DB:-abs}
     ports:
-      - "5432:5432"
+      - '${POSTGRES_PORT:-5432}:5432'
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-abs}"]
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-abs} -d ${POSTGRES_DB:-abs}']
       interval: 5s
       timeout: 3s
-      retries: 10
+      retries: 12
+      start_period: 10s
 
 volumes:
-  pgdata:
+  pgdata:

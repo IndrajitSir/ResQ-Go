@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 import { registerSchema } from '@abs/contracts';
 import { useAuth } from '@/components/auth-context';
+import { Alert } from '@/components/ui';
 import { isApiClientError } from '@/lib/api';
 
 function redirectPathFor(role: string): string {
@@ -86,14 +87,14 @@ export default function RegisterPage() {
   }
 
   return (
-    <section style={{ maxWidth: 480, margin: '2rem auto' }}>
+    <section className="auth-layout">
       <h1 className="page-title">Create an account</h1>
+      <p className="subtitle">
+        Patients and drivers can register here. Dispatcher and administrator accounts are
+        provisioned internally.
+      </p>
       <form className="card" onSubmit={handleSubmit} noValidate>
-        {error && (
-          <div className="alert alert-error" role="alert" aria-live="assertive">
-            {error}
-          </div>
-        )}
+        {error ? <Alert tone="error">{error}</Alert> : null}
         <fieldset>
           <legend>I am registering as</legend>
           <label className="radio-option">
@@ -194,7 +195,7 @@ export default function RegisterPage() {
           {fieldError('password')}
         </label>
 
-        <button type="submit" className="btn btn-primary" disabled={submitting}>
+        <button type="submit" className="btn btn-primary btn-block" disabled={submitting}>
           {submitting ? 'Creating account…' : 'Create account'}
         </button>
         <p className="muted" style={{ marginTop: '1rem' }}>

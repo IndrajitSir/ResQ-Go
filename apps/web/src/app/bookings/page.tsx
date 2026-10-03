@@ -1,48 +1,55 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { BookingStatus, Paginated } from '@abs/contracts';
+import type { BookingStatus, BookingView, Paginated } from '@abs/contracts';
 import { BOOKING_STATUSES } from '@abs/contracts';
 import { BookingCard } from '@/components/booking-card';
 import { RequireRole } from '@/lib/guards';
 import { apiFetch, isApiClientError } from '@/lib/api';
+import { Alert, EmptyState, SkeletonList } from '@/components/ui';
 import { statusLabel } from '@/lib/format';
 
-type ListPayload = { items: import('@abs/contracts').BookingView[]; page: number; pageSize: number; total: number; totalPages: number };
+type StatusFilter = BookingStatus | 'ALL';
 
 function BookingsContent() {
-  const [statusFilter, setStatusFilter] = useState<BookingStatus | 'ALL'>('ALL');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
   const [page, setPage] = useState(1);
-  const [data, setData] = useState<ListPayload | null>(null);
+  const [data, setData] = useState<Paginated<BookingView> | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const firstLoad = useRef(true);
+  const [error, setError] = useState<string | null>(null);
+  const [firstLoadDone, setFirstLoadDone] = useState(false);
+
+  // Stops a slow first request from overwriting a newer result.
+  const requestIdRef = useRef(0);
 
   const load = useCallback(
-    async (opts: { silent?: boolean } = {}) => {
-      if (!opts.silent) setLoading(true);
-      else setRefreshing(true);
+    async (silent = false) => {
+      const requestId = ++requestIdRef.current;
+      if (silent) setRefreshing(true);
+      else setLoading(true);
+
       try {
         const params = new URLSearchParams();
         if (statusFilter !== 'ALL') params.set('status', statusFilter);
         params.set('page', String(page));
         params.set('pageSize', '10');
-        const payload = await apiFetch<Paginated<import('@abs/contracts').BookingView>>(
-          `/bookings?${params.toString()}`,
-        );
+
+        const payload = await apiFetch<Paginated<BookingView>>(`/bookings?${params.toString()}`);
+        if (requestId !== requestIdRef.current) return;
         setData(payload);
         setError(null);
       } catch (err) {
+        if (requestId !== requestIdRef.current) return;
         setError(
-          isApiClientError(err)
-            ? err.message
-            : 'Could not load bookings. Please try refreshing.',
+          isApiClientError(err) ? err.message : 'We could not load your bookings right now.',
         );
       } finally {
-        setLoading(false);
-        setRefreshing(false);
-        firstLoad.current = false;
+        if (requestId === requestIdRef.current) {
+          setLoading(false);
+          setRefreshing(false);
+          setFirstLoadDone(true);
+        }
       }
     },
     [statusFilter, page],
@@ -52,107 +59,145 @@ function BookingsContent() {
     void load();
   }, [load]);
 
-  // Poll every 10s while the tab is visible.
+  // Background refresh; only while the tab is actually visible.
   useEffect(() => {
-    const interval = setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        void load({ silent: true });
-      }
-    }, 10000);
-    return () => clearInterval(interval);
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void load(true);
+    }, 15000);
+    return () => window.clearInterval(interval);
   }, [load]);
 
   const totalPages = data?.totalPages ?? 1;
+  const isEmpty = firstLoadDone && !loading && !error && (data?.items.length ?? 0) === 0;
 
   return (
     <>
-      <h1 className="page-title">Bookings</h1>
-
-      <div className="chip-row" role="group" aria-label="Filter by status">
+      <div className="page-header spread">
+        <div>
+          <h1 className="page-title">Bookings</h1>
+          <p className="subtitle">
+            {data
+              ? `${data.total} booking${data.total === 1 ? '' : 's'} · updated ${
+                  refreshing ? 'just now' : 'automatically'
+                }`
+              : 'Loading your bookings…'}
+          </p>
+        </div>
         <button
           type="button"
-          className="chip"
-          aria-pressed={statusFilter === 'ALL'}
-          onClick={() => {
-            setStatusFilter('ALL');
-            setPage(1);
-          }}
+          className="btn btn-secondary btn-small"
+          onClick={() => void load(true)}
+          disabled={refreshing}
         >
-          All
+          Refresh
         </button>
-        {BOOKING_STATUSES.map((status) => (
-          <button
-            key={status}
-            type="button"
-            className="chip"
-            aria-pressed={statusFilter === status}
-            onClick={() => {
-              setStatusFilter(status);
+      </div>
+
+      {/* A filter that stays usable on a phone, where a chip row would wrap
+          into an unusable height. */}
+      <div className="filter-bar">
+        <label className="field" style={{ margin: 0, minWidth: '15rem' }}>
+          <span className="visually-hidden">Filter by status</span>
+          <select
+            value={statusFilter}
+            onChange={(event) => {
+              setStatusFilter(event.target.value as StatusFilter);
               setPage(1);
             }}
           >
-            {statusLabel(status)}
+            <option value="ALL">All statuses</option>
+            {BOOKING_STATUSES.map((status) => (
+              <option key={status} value={status}>
+                {statusLabel(status)}
+              </option>
+            ))}
+          </select>
+        </label>
+        {statusFilter !== 'ALL' ? (
+          <button
+            type="button"
+            className="btn btn-ghost btn-small"
+            onClick={() => {
+              setStatusFilter('ALL');
+              setPage(1);
+            }}
+          >
+            Clear filter
           </button>
-        ))}
+        ) : null}
       </div>
 
-      <p className="muted" aria-live="polite" style={{ minHeight: '1.2em' }}>
-        {refreshing ? 'Refreshing…' : ''}
+      <p aria-live="polite" className="visually-hidden">
+        {refreshing ? 'Refreshing bookings' : ''}
       </p>
 
-      {loading && firstLoad.current ? (
-        <div role="status" aria-label="Loading bookings">
-          <div className="card">
-            <div className="skeleton" style={{ width: '40%' }} />
-            <div className="skeleton" />
-            <div className="skeleton" style={{ width: '70%' }} />
-          </div>
-          <div className="card">
-            <div className="skeleton" style={{ width: '40%' }} />
-            <div className="skeleton" />
-            <div className="skeleton" style={{ width: '70%' }} />
-          </div>
-        </div>
-      ) : error ? (
-        <div className="alert alert-error" role="alert" aria-live="assertive">
-          {error}
-          <div className="btn-row">
-            <button type="button" className="btn btn-ghost btn-small" onClick={() => void load()}>
+      {error ? (
+        <Alert
+          tone="error"
+          title="Could not load bookings"
+          onDismiss={() => setError(null)}
+        >
+          <p>{error}</p>
+          <div className="btn-row btn-row--tight">
+            <button type="button" className="btn btn-secondary btn-small" onClick={() => void load()}>
               Try again
             </button>
           </div>
-        </div>
-      ) : !data || data.items.length === 0 ? (
-        <div className="card empty-state">
-          <h2>No bookings found</h2>
-          <p>
-            {statusFilter !== 'ALL'
-              ? `You have no bookings with status "${statusLabel(statusFilter)}". Try clearing the filter.`
-              : 'Bookings you request will appear here. Create your first booking from the Book page.'}
-          </p>
-        </div>
+        </Alert>
+      ) : null}
+
+      {loading && !firstLoadDone ? (
+        <SkeletonList rows={3} label="Loading bookings" />
+      ) : isEmpty ? (
+        <EmptyState
+          icon="inbox"
+          title={statusFilter === 'ALL' ? 'No bookings yet' : 'Nothing matches that filter'}
+          action={
+            statusFilter === 'ALL' ? (
+              <a className="btn btn-primary" href="/book">
+                Request an ambulance
+              </a>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  setStatusFilter('ALL');
+                  setPage(1);
+                }}
+              >
+                Show all bookings
+              </button>
+            )
+          }
+        >
+          {statusFilter === 'ALL'
+            ? 'When you request transport, every booking will appear here with its live status.'
+            : `No bookings currently have the status “${statusLabel(statusFilter)}”.`}
+        </EmptyState>
       ) : (
         <>
-          {data.items.map((booking) => (
+          {data?.items.map((booking) => (
             <BookingCard key={booking.publicId} booking={booking} linkToDetail />
           ))}
+
           <nav aria-label="Pagination" className="btn-row" style={{ justifyContent: 'center' }}>
             <button
               type="button"
-              className="btn btn-ghost btn-small"
+              className="btn btn-secondary btn-small"
               disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
             >
               Previous
             </button>
             <span className="muted" aria-live="polite">
-              Page {data.page} of {totalPages} · {data.total} total
+              Page {data?.page ?? page} of {totalPages}
             </span>
             <button
               type="button"
-              className="btn btn-ghost btn-small"
+              className="btn btn-secondary btn-small"
               disabled={page >= totalPages}
-              onClick={() => setPage((p) => p + 1)}
+              onClick={() => setPage((current) => current + 1)}
             >
               Next
             </button>
@@ -169,4 +214,4 @@ export default function BookingsPage() {
       <BookingsContent />
     </RequireRole>
   );
-}
+}

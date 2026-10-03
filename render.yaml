@@ -1,56 +1,22 @@
+# ============================================================================
 # Render Blueprint — ResQ-Go
+# ============================================================================
 #
-# On first creation, Render provisions:
-#   - A PostgreSQL database (persistent)
-#   - A Web Web Service (Next.js on port 3000)
-#   - An API Web Service (NestJS on port 3001)
+# Creates the full stack on Render:
+#   - PostgreSQL (persistent)
+#   - API   (NestJS container, port 3001)
+#   - Web   (Next.js standalone container, port 3000)
 #
-# Both services share secrets through the `envVars` blocks below.
-# Add APP_ID / API_ID pairs pointing at your existing services if
-# re-deploying to an already-provisioned environment.
-
-services:
-  # ---- API (NestJS) ----
-  - type: web
-    name: resq-go-api
-    runtime: node
-    plan: starter
-    region: oregon
-    buildCommand: npm run build --workspace @abs/api
-    startCommand: npm run db:deploy --workspace @abs/api && node apps/api/dist/main.js
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: PORT
-        value: "3001"
-      - key: DATABASE_URL
-        fromDatabase:
-          name: resq-go-db
-          property: connectionString
-      - key: JWT_SECRET
-        sync: false
-      - key: JWT_EXPIRES_IN
-        value: "12h"
-      - key: JWT_REFRESH_EXPIRES_IN
-        value: "7d"
-      - key: BCRYPT_ROUNDS
-        value: "12"
-      - key: CORS_ORIGIN
-        sync: false
-
-  # ---- Web (Next.js) ----
-  - type: web
-    name: resq-go-web
-    runtime: node
-    plan: starter
-    region: oregon
-    buildCommand: npm run build --workspace @abs/web
-    startCommand: node apps/web/dist/server.js
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: NEXT_PUBLIC_API_URL
-        value: https://resq-go-api.onrender.com/api/v1
+# Both services are built from the Dockerfiles in this repository, so what is
+# deployed is exactly what `docker compose up` runs locally.
+#
+# Deploy: Render Dashboard -> New -> Blueprint -> select this repository.
+#
+# Secrets below are marked `sync: false`. Render prompts for them the first time
+# the blueprint runs and stores them; they are never written to this file.
+# To redeploy against services you already have, set `existingService`-style ids
+# in the Render dashboard rather than committing them here.
+# ============================================================================
 
 databases:
   - name: resq-go-db
@@ -58,4 +24,63 @@ databases:
     user: resqgo_user
     plan: starter
     region: oregon
-    ipAllowList: [] # only services in this blueprint may connect
+    postgresMajorVersion: '16'
+    # Empty allowlist: only services in this blueprint (and Render's internal
+    # network) can reach the database.
+    ipAllowList: []
+
+services:
+  # ---------------------------------------------------------------------------
+  # API — NestJS
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: resq-go-api
+    runtime: docker
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: .
+    plan: starter
+    region: oregon
+    # Container listens on 3001; this is the port Render exposes.
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: '3001'
+      - key: DATABASE_URL
+        fromDatabase:
+          name: resq-go-db
+          property: connectionString
+      # Required, never defaulted: the API refuses to boot with a known or
+      # too-short signing secret. Generate with:
+      #   node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_EXPIRES_IN
+        value: 12h
+      - key: BCRYPT_ROUNDS
+        value: '12'
+      # Comma-separated allowlist. Defaults to this deployment's own web origin.
+      - key: CORS_ORIGIN
+        sync: false
+
+  # ---------------------------------------------------------------------------
+  # Web — Next.js
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: resq-go-web
+    runtime: docker
+    dockerfilePath: ./apps/web/Dockerfile
+    dockerContext: .
+    plan: starter
+    region: oregon
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: '3000'
+      # Read by the browser at build time and by the server at runtime. Must be
+      # the public URL of resq-go-api once Render has assigned it.
+      - key: NEXT_PUBLIC_API_URL
+        sync: false

@@ -7,9 +7,10 @@ import { PrismaService } from '../prisma/prisma.service';
 import { mapUser, type UserRow } from '../common/mappers';
 import { ApiException } from '../common/errors/api-exception';
 
-const BCRYPT_ROUNDS = 10;
 const LOGIN_MAX_ATTEMPTS = 10;
 const LOGIN_WINDOW_MS = 5 * 60 * 1000;
+/** How often expired rate-limit buckets are swept out of memory. */
+const LOGIN_SWEEP_EVERY_MS = 60 * 1000;
 
 interface RateEntry {
   count: number;
@@ -25,11 +26,28 @@ export interface AuthResult {
 export class AuthService {
   /** In-memory rate limiting: max 10 login attempts per email+IP per 5 minutes. */
   private readonly loginAttempts = new Map<string, RateEntry>();
+  private readonly bcryptRounds: number;
+  private lastSweepAt = 0;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
-  ) {}
+  ) {
+    const configured = Number.parseInt(process.env.BCRYPT_ROUNDS ?? '', 10);
+    this.bcryptRounds = Number.isFinite(configured) ? configured : 10;
+  }
+
+  /**
+   * Drops expired buckets so an attacker rotating email addresses cannot grow
+   * this map without bound. Amortised: at most once per sweep interval.
+   */
+  private sweepExpiredAttempts(now: number): void {
+    if (now - this.lastSweepAt < LOGIN_SWEEP_EVERY_MS) return;
+    this.lastSweepAt = now;
+    for (const [key, entry] of this.loginAttempts) {
+      if (now >= entry.resetAt) this.loginAttempts.delete(key);
+    }
+  }
 
   async register(dto: RegisterDto): Promise<AuthResult> {
     const existing = await this.prisma.user.findUnique({
@@ -45,7 +63,7 @@ export class AuthService {
       );
     }
 
-    const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
+    const passwordHash = await bcrypt.hash(dto.password, this.bcryptRounds);
     const publicId = randomUUID();
 
     const user = await this.prisma.$transaction(async (tx) => {
@@ -82,6 +100,7 @@ export class AuthService {
   async login(dto: LoginDto, ip: string): Promise<AuthResult> {
     const rateKey = `${dto.email}:${ip}`;
     const now = Date.now();
+    this.sweepExpiredAttempts(now);
     const entry = this.loginAttempts.get(rateKey);
     if (entry && now < entry.resetAt && entry.count >= LOGIN_MAX_ATTEMPTS) {
       throw new ApiException(

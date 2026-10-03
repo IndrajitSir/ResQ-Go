@@ -4,6 +4,7 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 import type { UserRole } from '@abs/contracts';
 import { useAuth } from '@/components/auth-context';
+import { EmptyState } from '@/components/ui';
 
 interface RequireRoleProps {
   /** Allowed roles. When omitted, only requires authentication. */
@@ -12,8 +13,9 @@ interface RequireRoleProps {
 }
 
 /**
- * Client-side gate: renders a friendly card instead of content when the user
- * is signed out or lacks the required role. The API remains the authority.
+ * Client-side gate: renders a friendly explanation instead of content when the
+ * user is signed out or lacks the required role. This is a usability measure
+ * only — the API independently enforces every rule on every request.
  */
 export function RequireRole({ role, children }: RequireRoleProps) {
   const { user, ready } = useAuth();
@@ -28,37 +30,41 @@ export function RequireRole({ role, children }: RequireRoleProps) {
 
   if (!user) {
     return (
-      <section className="card empty-state" aria-live="polite">
-        <h1>Sign in required</h1>
-        <p>You need an account to view this page.</p>
-        <div className="btn-row">
-          <Link className="btn btn-primary" href="/login">
-            Log in
-          </Link>
-          <Link className="btn btn-ghost" href="/register">
-            Create an account
-          </Link>
-        </div>
-      </section>
+      <EmptyState
+        icon="shield"
+        title="Sign in to continue"
+        action={
+          <>
+            <Link className="btn btn-primary" href="/login">
+              Log in
+            </Link>
+            <Link className="btn btn-secondary" href="/register">
+              Create an account
+            </Link>
+          </>
+        }
+      >
+        This area needs an account. Everything else stays public.
+      </EmptyState>
     );
   }
 
   if (role && !role.includes(user.role)) {
     return (
-      <section className="card empty-state" aria-live="polite">
-        <h1>Not authorized for this area</h1>
-        <p>
-          Your account role ({user.role}) does not have access to this page. If you believe this is
-          a mistake, contact your operator.
-        </p>
-        <div className="btn-row">
-          <Link className="btn btn-ghost" href="/">
+      <EmptyState
+        icon="shield"
+        title="Not available for your role"
+        action={
+          <Link className="btn btn-secondary" href="/">
             Back to home
           </Link>
-        </div>
-      </section>
+        }
+      >
+        You are signed in as <strong>{user.role}</strong>. This console is reserved for other
+        roles — if you believe that is wrong, contact your operator.
+      </EmptyState>
     );
   }
 
   return <>{children}</>;
-}
+}

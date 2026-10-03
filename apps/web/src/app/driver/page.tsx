@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { BookingView, DriverProfileView, TripView } from '@abs/contracts';
 import { StatusBadge, UrgencyBadge } from '@/components/status-badge';
+import { Alert, Card, EmptyState, RouteSummary, SkeletonList } from '@/components/ui';
 import { RequireRole } from '@/lib/guards';
 import { apiFetch, isApiClientError } from '@/lib/api';
 import { formatDate, shortId, statusLabel } from '@/lib/format';
@@ -118,27 +119,22 @@ function DriverContent() {
   }
 
   if (loading && !profile) {
-    return (
-      <div role="status" aria-label="Loading dashboard">
-        <div className="card">
-          <div className="skeleton" style={{ width: '40%' }} />
-          <div className="skeleton" />
-          <div className="skeleton" style={{ width: '70%' }} />
-        </div>
-      </div>
-    );
+    return <SkeletonList rows={1} label="Loading driver dashboard" />;
   }
 
   if (error && !profile) {
     return (
-      <div className="alert alert-error" role="alert" aria-live="assertive">
-        {error}
-        <div className="btn-row">
-          <button type="button" className="btn btn-ghost btn-small" onClick={() => void load()}>
+      <EmptyState
+        icon="inbox"
+        title="Dashboard unavailable"
+        action={
+          <button type="button" className="btn btn-secondary" onClick={() => void load()}>
             Try again
           </button>
-        </div>
-      </div>
+        }
+      >
+        {error}
+      </EmptyState>
     );
   }
 
@@ -159,25 +155,22 @@ function DriverContent() {
       <p aria-live="polite" className="visually-hidden">
         {successMessage}
       </p>
-      {actionError && (
-        <div className="alert alert-error" role="alert">
-          {actionError}
-        </div>
-      )}
+      {actionError ? <Alert tone="error">{actionError}</Alert> : null}
 
-      <section className="card" aria-labelledby="availability-heading">
-        <h2 id="availability-heading">Availability</h2>
+      <Card>
+        <h2>Availability</h2>
         {profile ? (
           <>
             <p>
-              Current status:{' '}
+              You are currently{' '}
               <strong>
                 {profile.availability === 'AVAILABLE'
-                  ? 'Available'
+                  ? 'available'
                   : profile.availability === 'ON_TRIP'
-                    ? 'On trip'
-                    : 'Off duty'}
+                    ? 'on a trip'
+                    : 'off duty'}
               </strong>
+              . Dispatch only assigns work to available, verified crews.
             </p>
             <div className="btn-row">
               <button
@@ -190,7 +183,7 @@ function DriverContent() {
               </button>
               <button
                 type="button"
-                className="btn btn-ghost"
+                className="btn btn-secondary"
                 disabled={acting || profile.availability === 'OFF_DUTY'}
                 onClick={() => void setAvailability('OFF_DUTY')}
               >
@@ -201,14 +194,16 @@ function DriverContent() {
         ) : (
           <p className="muted">Loading availability…</p>
         )}
-      </section>
+      </Card>
 
       <section aria-labelledby="pending-heading">
         <h2 id="pending-heading" className="page-title">
           Pending decisions
         </h2>
         {pending.length === 0 ? (
-          <p className="muted">No assignments waiting for your decision.</p>
+          <EmptyState icon="inbox" title="Nothing waiting">
+            New assignments will appear here for you to accept or decline.
+          </EmptyState>
         ) : (
           pending.map(({ trip, booking }) => (
             <div className="card" key={trip.publicId}>
@@ -217,16 +212,7 @@ function DriverContent() {
                 <UrgencyBadge urgency={booking.urgency} />
                 <span>{booking.requiredAmbulanceType}</span>
               </div>
-              <div className="route-summary">
-                <div className="route-stop">
-                  <span className="route-dot" aria-hidden="true" />
-                  <span>{booking.pickup.label} — {booking.pickup.address}</span>
-                </div>
-                <div className="route-stop">
-                  <span className="route-dot destination" aria-hidden="true" />
-                  <span>{booking.destination.label} — {booking.destination.address}</span>
-                </div>
-              </div>
+              <RouteSummary booking={booking} />
               {rejectTripId === trip.publicId ? (
                 <>
                   <label className="field">
@@ -291,7 +277,9 @@ function DriverContent() {
           Active trip
         </h2>
         {active.length === 0 ? (
-          <p className="muted">No active trip. Accepted assignments appear here.</p>
+          <EmptyState icon="ambulance" title="No active trip">
+            Accepted assignments appear here with a single next action.
+          </EmptyState>
         ) : (
           active.map(({ trip, booking }) => {
             const action = NEXT_ACTION[booking.status];
@@ -302,20 +290,7 @@ function DriverContent() {
                   <StatusBadge status={booking.status} />
                   <UrgencyBadge urgency={booking.urgency} />
                 </div>
-                <div className="route-summary">
-                  <div className="route-stop">
-                    <span className="route-dot" aria-hidden="true" />
-                    <span>
-                      <strong>{booking.pickup.label}</strong> — {booking.pickup.address}
-                    </span>
-                  </div>
-                  <div className="route-stop">
-                    <span className="route-dot destination" aria-hidden="true" />
-                    <span>
-                      <strong>{booking.destination.label}</strong> — {booking.destination.address}
-                    </span>
-                  </div>
-                </div>
+                <RouteSummary booking={booking} />
                 {action && (
                   <div className="btn-row">
                     <button
@@ -365,7 +340,9 @@ function DriverContent() {
           Trip history
         </h2>
         {history.length === 0 ? (
-          <p className="muted">No past trips yet.</p>
+          <EmptyState icon="inbox" title="No past trips">
+            Completed and cancelled trips are kept here for your records.
+          </EmptyState>
         ) : (
           history.map(({ trip, booking }) => (
             <div className="card" key={trip.publicId}>

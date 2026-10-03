@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { NotificationView } from '@abs/contracts';
 import { RequireRole } from '@/lib/guards';
 import { apiFetch, isApiClientError } from '@/lib/api';
+import { Alert, EmptyState, SkeletonList } from '@/components/ui';
 import { formatDate } from '@/lib/format';
 
 function NotificationsContent() {
@@ -47,30 +48,26 @@ function NotificationsContent() {
       <h1 className="page-title">Notifications</h1>
 
       {loading && !notifications ? (
-        <div role="status" aria-label="Loading notifications">
-          <div className="card">
-            <div className="skeleton" style={{ width: '30%' }} />
-            <div className="skeleton" />
-          </div>
-          <div className="card">
-            <div className="skeleton" style={{ width: '30%' }} />
-            <div className="skeleton" />
-          </div>
-        </div>
+        <SkeletonList rows={2} label="Loading notifications" />
       ) : error && !notifications ? (
-        <div className="alert alert-error" role="alert" aria-live="assertive">
-          {error}
-          <div className="btn-row">
-            <button type="button" className="btn btn-ghost btn-small" onClick={() => void load()}>
+        <EmptyState
+          icon="inbox"
+          title="Notifications unavailable"
+          action={
+            <button type="button" className="btn btn-secondary" onClick={() => void load()}>
               Try again
             </button>
-          </div>
-        </div>
+          }
+        >
+          {error}
+        </EmptyState>
       ) : !notifications || notifications.length === 0 ? (
-        <div className="card empty-state">
-          <h2>No notifications yet</h2>
-          <p>Updates about your bookings and trips will appear here.</p>
-        </div>
+        <EmptyState icon="inbox" title="No notifications yet">
+          Updates about your bookings and trips — assignments, arrivals and cancellations — appear
+          here.
+        </EmptyState>
+      ) : error ? (
+        <Alert tone="error">{error}</Alert>
       ) : (
         notifications.map((notification) => (
           <article className="card" key={notification.publicId}>

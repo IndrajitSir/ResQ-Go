@@ -18,10 +18,13 @@
     "react-leaflet": "^5.0.0"
   },
   "devDependencies": {
+    "@abs/eslint-config": "*",
     "@types/leaflet": "^1.9.22",
     "@types/node": "^22.10.2",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^14.2.15",
     "typescript": "^5.7.2"
   }
 }

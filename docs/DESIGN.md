@@ -247,6 +247,88 @@ Recommended initial environments:
 - Staging environment with isolated credentials and databases.
 - Production environment with backups, monitoring, TLS, secret management, and controlled migrations.
 
+### Implemented as of this revision
+
+- `docker-compose.yml` at the repository root builds the **production** Dockerfiles and runs the full
+  stack (postgres -> migrate -> api -> web), so local `up` also validates the images. A one-shot
+  `migrate` service applies the schema and seeds; `api` waits for it to finish.
+- `infra/docker-compose.yml` is the lighter alternative: database only, for running the apps on the
+  host with `npm run dev:*`.
+- `apps/api/Dockerfile` and `apps/web/Dockerfile` are multi-stage, run as the unprivileged `node`
+  user, declare health checks, and never bake in secrets. The web image uses Next `output:
+  'standalone'`, so it ships only the modules it actually imports.
+- `render.yaml` deploys **those same Dockerfiles**, so Render runs the artefact that was verified
+  locally rather than a second, divergent build path.
+- The API container synchronises the Prisma schema at boot and deliberately does **not** seed demo
+  accounts: seeded users ship with published passwords and have no place in a deployed environment.
+
+### Health endpoints
+
+| Endpoint | Depends on | Failure behaviour |
+|---|---|---|
+| `GET /api/v1/health` | nothing | Orchestrator may restart the container |
+| `GET /api/v1/health/ready` | database (`SELECT 1`) | Answers `503`, traffic is withheld |
+
+Liveness deliberately does not touch the database so a database blip cannot trigger a restart loop.
+Readiness reports only the failure *category*, never the underlying message, which can contain
+connection details.
+
+## Cross-Cutting Concerns (implemented)
+
+### Request pipeline
+
+Middleware order is deliberate: correlation id first, so every later log line including errors can
+reference it, then security headers, then the access log.
+
+- `RequestIdMiddleware` assigns a UUID and echoes it as `x-request-id`.
+- `SecurityHeadersMiddleware` sets clickjacking, sniffing, CSP, caching, referrer and permissions
+  policies. HSTS is only sent when `NODE_ENV=production`.
+- `RequestLoggerMiddleware` emits one JSON line per completed request with the method, **scrubbed**
+  path, status, and duration. Resource identifiers are replaced with `:id` and query strings are
+  dropped, so an access log never becomes a record of who requested which booking, and never captures
+  a bearer token from an SSE URL.
+
+### Configuration
+
+`common/config/env.ts` parses and validates the environment once, at bootstrap, before the port is
+bound. A misconfigured deployment fails immediately with one actionable message. It rejects a
+missing, placeholder, or under-length `JWT_SECRET` in production, a wildcard or non-absolute
+`CORS_ORIGIN`, and an out-of-range `BCRYPT_ROUNDS`. `CORS_ORIGIN` is an explicit comma-separated
+allowlist — the request origin is never reflected back.
+
+### Frontend design system
+
+`apps/web/src/app/globals.css` is a token-driven system (colour, type scale, spacing, radii, motion)
+with a semantic layer consumed by components, and a light and dark theme. `landing.css` holds the
+narrative page styles. Components are built on shared primitives in `components/ui.tsx`.
+
+Motion is CSS- and `IntersectionObserver`-driven rather than a third-party animation library: it adds
+no bundle weight, degrades gracefully, and `prefers-reduced-motion` is honoured by skipping animation
+rather than merely shortening it. The landing "journey" demo validates every transition it shows
+against the shared state machine at import time, so the storytelling cannot drift into showing an
+impossible workflow, and is explicitly labelled a simulation.
+
+### Browser security headers
+
+The API sets its own headers, but the browser loads the HTML app directly, so `apps/web/next.config.js`
+sets a matching set there: CSP, `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy:
+no-referrer`, `X-DNS-Prefetch-Control`, and a `Permissions-Policy` that allows geolocation and denies
+camera and microphone. HSTS is added only under `NODE_ENV=production`. `poweredByHeader` is already
+false, so no framework banner is emitted.
+
+The CSP is built from the origins this app actually uses rather than a template:
+
+- `img-src` allows OpenStreetMap raster tiles for the Leaflet map.
+- `connect-src` allows the API origin, derived from `NEXT_PUBLIC_API_URL` at build time.
+- `script-src` and `style-src` need `'unsafe-inline'`, because Next.js 14 inlines the RSC flight
+  payload and Leaflet positions panes with inline style attributes. A per-request nonce would remove
+  this, but only by forcing every route out of static prerendering, which is the worse trade here.
+  `'unsafe-eval'` is added outside production only, for React Fast Refresh.
+- `frame-ancestors 'none'` and `object-src 'none'` match the API's no-framing policy.
+
+Verified in a browser against the standalone production artefact: zero console messages and zero CSP
+violations, with the theme toggle, role tabs and journey demo all still interactive.
+
 ## Architecture Decision Record
 
 For significant decisions, record:
@@ -261,3 +343,8 @@ For significant decisions, record:
 ## Changelog
 
 - Initial version: project recreation from scratch.
+- 2026-10-03: Added health/readiness split, security-header and structured request-logging
+  middleware, validated runtime configuration, token-driven frontend design system with light/dark
+  themes, Docker images for both services, and a Render blueprint that deploys those images.
+- 2026-10-03: Added browser security headers (CSP, framing, referrer, permissions policy) to the
+  Next.js app, which previously emitted none. The API was already hardened; the HTML tier was not.

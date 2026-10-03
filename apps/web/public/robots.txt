@@ -1,0 +1,3 @@
+# ResQ-Go is an authenticated application. Nothing here should be indexed.
+User-agent: *
+Disallow: /

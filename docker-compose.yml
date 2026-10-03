@@ -1,0 +1,109 @@
+# ============================================================================
+# ResQ-Go — local development & integration environment
+# ============================================================================
+#
+#   docker compose up --build              full stack (postgres + api + web)
+#   docker compose up postgres             database only, then run `npm run dev`
+#   docker compose --profile browser up    full stack with a local API target
+#
+# Ports
+#   5432  PostgreSQL
+#   3001  API   (http://localhost:3001/api/v1/health)
+#   3000  Web   (http://localhost:3000)
+#
+# Credentials come from the root `.env` (see .env.example) so the same values
+# are used by Compose, the host dev servers, and the integration test suite.
+#
+# This file builds the same Dockerfiles used for production, so `up` also
+# verifies that the images actually build and start.
+# ============================================================================
+
+name: resq-go
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-abs}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-abs_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-abs}
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # Every other service waits for this, so `depends_on` below is meaningful.
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-abs} -d ${POSTGRES_DB:-abs}']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  # One-shot: creates the schema and loads synthetic demo data. Safe to re-run.
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: migrate
+    restart: 'no'
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-abs}:${POSTGRES_PASSWORD:-abs_dev_password}@postgres:5432/${POSTGRES_DB:-abs}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: runtime
+    restart: unless-stopped
+    ports:
+      - '${API_PORT:-3001}:3001'
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 3001
+      DATABASE_URL: postgresql://${POSTGRES_USER:-abs}:${POSTGRES_PASSWORD:-abs_dev_password}@postgres:5432/${POSTGRES_DB:-abs}
+      # Must be overridden locally; the API refuses known placeholder values.
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env (see .env.example)}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-12h}
+      BCRYPT_ROUNDS: ${BCRYPT_ROUNDS:-10}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      target: runtime
+      args:
+        # Baked into the client bundle at build time.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001/api/v1}
+    restart: unless-stopped
+    ports:
+      - '${WEB_PORT:-3000}:3000'
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      # Runtime override: read by the server when proxying/rewriting.
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001/api/v1}
+    depends_on:
+      api:
+        condition: service_healthy
+
+  # Optional: a real browser for manual end-to-end checks of the full stack.
+  browser:
+    profiles: ['browser']
+    image: selenium/standalone-chrome:latest
+    shm_size: 2gb
+    depends_on:
+      web:
+        condition: service_healthy
+
+volumes:
+  pgdata:

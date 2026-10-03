@@ -4,6 +4,7 @@ import { INestApplication } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import * as bcrypt from 'bcryptjs';
 import request from 'supertest';
+import { PrismaClient } from '@prisma/client';
 import { API_V1_PREFIX } from '@abs/config';
 import { AppModule } from '../app.module';
 import { PrismaService } from '../prisma/prisma.service';
@@ -11,6 +12,12 @@ import { GlobalHttpExceptionFilter } from '../common/filters/http-exception.filt
 
 /** Nest's global prefix has no leading slash; request paths need one. */
 const BASE = `/${API_V1_PREFIX}`;
+
+/** Never let credentials reach a test log line. */
+function redactUrl(url: string | undefined): string {
+  if (!url) return '(unset)';
+  return url.replace(/\/\/([^:]+):([^@]+)@/, '//$1:***@');
+}
 
 /**
  * End-to-end coverage of the core operational flow, exercised through the real
@@ -49,7 +56,8 @@ describe('Request to completion (e2e)', () => {
   });
 
   afterEach(async () => {
-    if (testBookings.size === 0) {
+    // Skip cleanly when the suite never got as far as connecting.
+    if (!prisma || testBookings.size === 0) {
       return;
     }
     const ids = [...testBookings];
@@ -76,7 +84,34 @@ describe('Request to completion (e2e)', () => {
     });
   });
 
+  /**
+   * This suite talks to a real PostgreSQL database, so make the prerequisite
+   * explicit instead of letting the failure surface as an opaque Prisma error.
+   */
+  async function assertDatabaseReachable(): Promise<void> {
+    try {
+      await prismaClient.$queryRaw`SELECT 1`;
+    } catch (error) {
+      throw new Error(
+        [
+          'This end-to-end suite requires a running PostgreSQL instance.',
+          `Tried to connect to: ${redactUrl(process.env.DATABASE_URL)}`,
+          'Start one with: docker compose -f infra/docker-compose.yml up -d postgres',
+          'Then create the schema with: npm run db:push',
+          'Alternatively point TEST_DATABASE_URL at your own instance.',
+          `Underlying error: ${error instanceof Error ? error.message : String(error)}`,
+        ].join('\n'),
+      );
+    }
+  }
+
+  let prismaClient: PrismaClient;
+
   beforeAll(async () => {
+    prismaClient = new PrismaClient();
+    await assertDatabaseReachable();
+    await prismaClient.$disconnect();
+
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix(API_V1_PREFIX);
@@ -163,6 +198,9 @@ describe('Request to completion (e2e)', () => {
     // afterEach already cleaned up per-test data. Remove the seed data and
     // close the app. If a prior test run left orphaned rows in this database
     // file, broad deletes are safer than targeted ones.
+    if (!prisma) {
+      return;
+    }
     await prisma.tripLocation.deleteMany();
     await prisma.trip.deleteMany();
     await prisma.bookingEvent.deleteMany();

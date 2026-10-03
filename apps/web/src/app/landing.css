@@ -1,0 +1,466 @@
+/* ==========================================================================
+   ResQ-Go — landing page & interactive storytelling
+   --------------------------------------------------------------------------
+   Loaded from the root layout alongside globals.css. Everything here composes
+   the design-system tokens defined there; no raw colours or spacing values.
+   ========================================================================== */
+
+/* Scroll reveal ------------------------------------------------------------
+   Progressive enhancement: the hidden state only applies once the component has
+   confirmed it mounted, so content is never trapped behind JavaScript. */
+.reveal {
+  transition:
+    opacity var(--dur-slow) var(--ease-out),
+    transform var(--dur-slow) var(--ease-out);
+  transition-delay: var(--reveal-delay, 0ms);
+}
+
+.reveal[data-reveal-ready='true'][data-visible='false'] {
+  opacity: 0;
+  transform: translateY(var(--reveal-distance, 16px));
+}
+
+.section {
+  padding: var(--space-9) 0;
+}
+
+.section--alt {
+  background: var(--surface-sunken);
+  border-block: 1px solid var(--border-subtle);
+}
+
+.closing {
+  padding-bottom: var(--space-9);
+}
+
+/* Hero ------------------------------------------------------------------- */
+
+.hero {
+  position: relative;
+  overflow: hidden;
+  padding: var(--space-8) 0 var(--space-7);
+  isolation: isolate;
+}
+
+/* A faint clinical grid: structure without noise. */
+.hero__grid {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image:
+    linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 20%, transparent 75%);
+  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 20%, transparent 75%);
+}
+
+.hero__inner {
+  text-align: center;
+}
+
+.hero__title {
+  font-size: var(--text-4xl);
+  line-height: 1.05;
+  letter-spacing: -0.035em;
+  margin: 0 auto var(--space-4);
+  /* Wide enough to break into three balanced lines at desktop, two on mobile. */
+  max-width: 24ch;
+  text-wrap: balance;
+}
+
+.hero__lead {
+  font-size: var(--text-lg);
+  color: var(--text-muted);
+  max-width: 46ch;
+  margin: 0 auto var(--space-6);
+}
+
+.hero__actions {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: var(--space-5);
+}
+
+.hero__emergency {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--signal-critical);
+  text-decoration: none;
+}
+
+.hero__emergency:hover {
+  text-decoration: underline;
+}
+
+/* Problem cards ----------------------------------------------------------- */
+
+.problem-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-4);
+  margin-top: var(--space-6);
+}
+
+.problem-card {
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-5);
+  height: 100%;
+  box-shadow: var(--shadow-sm);
+}
+
+.problem-card h3 {
+  font-size: var(--text-md);
+  margin-bottom: var(--space-2);
+}
+
+/* Journey demo ------------------------------------------------------------ */
+
+.journey {
+  margin-top: var(--space-6);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+}
+
+.journey__stage {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-5);
+  padding: var(--space-5);
+}
+
+@media (min-width: 820px) {
+  .journey__stage {
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+    align-items: center;
+    padding: var(--space-6);
+  }
+}
+
+.journey__map {
+  background: var(--surface-inset);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  padding: var(--space-4);
+}
+
+.journey__svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.journey__map-label {
+  font-size: 3.4px;
+  font-family: var(--font-sans);
+  fill: var(--text-muted);
+}
+
+.journey__vehicle {
+  /* User units: a px value maps to SVG coordinates. */
+  transition: transform 900ms var(--ease-in-out);
+}
+
+.journey__vehicle-halo {
+  transition: r 600ms var(--ease-out);
+}
+
+.journey__readout h3 {
+  letter-spacing: -0.02em;
+}
+
+.journey__controls {
+  border-top: 1px solid var(--border-subtle);
+  background: var(--surface-inset);
+  padding: var(--space-5);
+}
+
+.journey__progress {
+  height: 3px;
+  border-radius: var(--radius-full);
+  background: var(--border-subtle);
+  overflow: hidden;
+  margin-bottom: var(--space-4);
+}
+
+.journey__progress > span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--brand-500), var(--signal-critical));
+  transition: width var(--dur-slow) var(--ease-out);
+}
+
+.journey__rail {
+  display: flex;
+  gap: var(--space-1);
+  list-style: none;
+  margin: 0 0 var(--space-4);
+  padding: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.journey__rail li {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.journey__rail button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  width: 100%;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.journey__dot {
+  width: 100%;
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: var(--border-default);
+  transition: background-color var(--dur) var(--ease-out);
+}
+
+.journey__dot-label {
+  font-size: var(--text-2xs);
+  color: var(--text-subtle);
+  line-height: 1.25;
+  transition: color var(--dur) var(--ease-out);
+}
+
+.journey__rail li[data-state='done'] .journey__dot {
+  background: var(--brand-400);
+}
+
+.journey__rail li[data-state='done'] .journey__dot-label {
+  color: var(--text-muted);
+}
+
+.journey__rail li[data-state='active'] .journey__dot {
+  background: var(--signal-critical);
+}
+
+.journey__rail li[data-state='active'] .journey__dot-label {
+  color: var(--text-strong);
+  font-weight: 700;
+}
+
+.journey__rail button:hover .journey__dot-label {
+  color: var(--text-strong);
+}
+
+.journey__rail button:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 4px;
+  border-radius: var(--radius-xs);
+}
+
+.journey__actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-4);
+}
+
+.journey__disclaimer {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  margin: 0;
+  max-width: 70ch;
+}
+
+/* Role explorer ----------------------------------------------------------- */
+
+.roles {
+  margin-top: var(--space-6);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.roles__tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-inset);
+  overflow-x: auto;
+}
+
+.roles__tab {
+  flex: 1;
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: var(--space-4) var(--space-3);
+  font: inherit;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+
+.roles__tab:hover {
+  color: var(--text-strong);
+}
+
+.roles__tab[aria-selected='true'] {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  background: var(--surface-raised);
+}
+
+.roles__panel {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-6);
+  padding: var(--space-6);
+}
+
+@media (min-width: 820px) {
+  .roles__panel {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
+.roles__list {
+  list-style: none;
+  margin: 0 0 var(--space-5);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.roles__list li {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  font-size: var(--text-base);
+  color: var(--text-default);
+}
+
+.roles__list svg {
+  flex: none;
+  margin-top: 3px;
+  color: var(--accent);
+}
+
+.roles__preview {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface-inset);
+}
+
+.roles__preview-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-raised);
+}
+
+.roles__preview-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border-default);
+}
+
+.roles__preview-title {
+  margin-left: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.roles__preview-body {
+  margin: 0;
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.roles__preview-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.roles__preview-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.roles__preview-row dt {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.roles__preview-row dd {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-strong);
+  font-weight: 600;
+  text-align: right;
+}
+
+/* Guarantees -------------------------------------------------------------- */
+
+.guarantee-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--space-4);
+  margin-top: var(--space-6);
+}
+
+.guarantee {
+  height: 100%;
+  padding: var(--space-5);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-xs);
+}
+
+.guarantee__icon {
+  color: var(--accent);
+  margin-bottom: var(--space-3);
+}
+
+.guarantee h3 {
+  font-size: var(--text-md);
+  margin-bottom: var(--space-2);
+}
+
+.guarantee p {
+  margin: 0;
+}

@@ -3,14 +3,15 @@
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { AmbulanceView, BookingView, TripLocationView, TripView } from '@abs/contracts';
+import type { AmbulanceView, BookingStatus, BookingView, TripLocationView, TripView } from '@abs/contracts';
 import { StatusBadge, UrgencyBadge } from '@/components/status-badge';
+import { Alert, Card, EmptyState, RouteSummary, SkeletonList, StatCard } from '@/components/ui';
 import { RequireRole } from '@/lib/guards';
 import { apiFetch, isApiClientError } from '@/lib/api';
 import { useRealtime } from '@/lib/use-realtime';
 import { ageLabel, shortId, statusLabel } from '@/lib/format';
 
-// Leaflet requires the DOM; lazy-load it to avoid SSR crashes.
+// Leaflet requires the DOM; lazy-load it so the console still renders on the server.
 const LiveMap = dynamic(() => import('@/components/live-map'), { ssr: false });
 
 interface FleetSummary {
@@ -23,8 +24,8 @@ interface FleetSummary {
 
 interface ActiveTrip {
   bookingPublicId: string;
-  status: string;
-  urgency: string;
+  status: BookingStatus;
+  urgency: 'PLANNED' | 'URGENT' | 'EMERGENCY';
   pickup: { latitude: number; longitude: number; label: string; address: string };
   destination?: { latitude: number; longitude: number; label: string; address: string };
   ambulance?: { publicId: string; registrationNumber: string; type: string };
@@ -36,6 +37,9 @@ interface DashboardPayload {
   fleet: FleetSummary;
   activeTrips: ActiveTrip[];
 }
+
+/** Where the map looks when nothing is moving yet. */
+const DEFAULT_CENTER: [number, number] = [12.9716, 77.5946];
 
 function DispatcherContent() {
   const [dashboard, setDashboard] = useState<DashboardPayload | null>(null);
@@ -49,23 +53,20 @@ function DispatcherContent() {
   const [toast, setToast] = useState('');
   const [assigning, setAssigning] = useState<string | null>(null);
 
-  // SSE for real-time updates.
   const { connected: sseConnected } = useRealtime();
 
   const loadDashboard = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const [dash, q] = await Promise.all([
+      const [dash, pending] = await Promise.all([
         apiFetch<DashboardPayload>('/dispatch/dashboard'),
         apiFetch<BookingView[]>('/dispatch/queue'),
       ]);
       setDashboard(dash);
-      setQueue(q);
+      setQueue(pending);
       setError(null);
     } catch (err) {
-      setError(
-        isApiClientError(err) ? err.message : 'Could not load the dashboard. Please refresh.',
-      );
+      setError(isApiClientError(err) ? err.message : 'Could not load the dispatch console.');
     } finally {
       setLoading(false);
     }
@@ -81,9 +82,7 @@ function DispatcherContent() {
       setActionError(null);
     } catch (err) {
       setEligible([]);
-      setActionError(
-        isApiClientError(err) ? err.message : 'Could not load eligible ambulances.',
-      );
+      setActionError(isApiClientError(err) ? err.message : 'Could not load eligible ambulances.');
     } finally {
       setEligibleLoading(false);
     }
@@ -94,22 +93,17 @@ function DispatcherContent() {
   }, [loadDashboard]);
 
   useEffect(() => {
-    if (selectedId) {
-      void loadEligible(selectedId);
-    } else {
-      setEligible([]);
-    }
+    if (selectedId) void loadEligible(selectedId);
+    else setEligible([]);
   }, [selectedId, loadEligible]);
 
-  // Poll every 10s; SSE handles fast pushes.
   useEffect(() => {
-    const interval = setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        void loadDashboard(true);
-        if (selectedId) void loadEligible(selectedId, true);
-      }
-    }, 10000);
-    return () => clearInterval(interval);
+    const interval = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
+      void loadDashboard(true);
+      if (selectedId) void loadEligible(selectedId, true);
+    }, 12000);
+    return () => window.clearInterval(interval);
   }, [loadDashboard, loadEligible, selectedId]);
 
   async function assign(ambulancePublicId: string) {
@@ -121,231 +115,236 @@ function DispatcherContent() {
         `/dispatch/bookings/${selectedId}/assign`,
         { method: 'POST', body: { ambulanceId: ambulancePublicId } },
       );
-      setToast('Ambulance assigned successfully.');
+      setToast('Ambulance assigned. The crew has been notified.');
+      setSelectedId(null);
       await loadDashboard(true);
-      await loadEligible(selectedId, true);
     } catch (err) {
       setActionError(
-        isApiClientError(err) ? err.message : 'Could not assign the ambulance. Please try again.',
+        isApiClientError(err) ? err.message : 'Could not assign that ambulance. Please retry.',
       );
     } finally {
       setAssigning(null);
     }
   }
 
-  const selected = queue.find((b) => b.publicId === selectedId) ?? null;
+  const selected = queue.find((booking) => booking.publicId === selectedId) ?? null;
 
-  // Compute the map center from active trips or default to Bangalore.
-  const mapCenter = useMemo((): [number, number] => {
+  const mapTarget = useMemo(() => {
     const first = dashboard?.activeTrips[0];
-    if (first) {
-      return first.liveLocation
-        ? [first.liveLocation.latitude, first.liveLocation.longitude]
-        : [first.pickup.latitude, first.pickup.longitude];
-    }
-    return [12.9716, 77.5946];
+    if (!first) return null;
+    return first.liveLocation
+      ? [first.liveLocation.latitude, first.liveLocation.longitude]
+      : [first.pickup.latitude, first.pickup.longitude];
   }, [dashboard]);
 
   return (
     <>
-      <h1 className="page-title">
-        Dispatch console
-        {sseConnected && <span className="live-dot" aria-label="Live updates connected" />}
-      </h1>
+      <div className="page-header spread">
+        <div>
+          <div className="page-header__row">
+            <h1 className="page-title">Dispatch console</h1>
+            {sseConnected ? (
+              <span className="badge badge-completed">
+                <span className="live-dot" style={{ marginLeft: 0 }} />
+                Live
+              </span>
+            ) : null}
+          </div>
+          <p className="subtitle">
+            Emergencies first, then urgency, then how long the request has been waiting.
+          </p>
+        </div>
+        <Link className="btn btn-secondary btn-small" href="/bookings">
+          All bookings →
+        </Link>
+      </div>
+
       <p aria-live="polite" className="visually-hidden">
         {toast}
       </p>
 
-      {error && (
-        <div className="alert alert-error" role="alert" aria-live="assertive">
-          {error}
-          <div className="btn-row">
-            <button type="button" className="btn btn-ghost btn-small" onClick={() => void loadDashboard()}>
+      {error ? (
+        <Alert tone="error" title="Console unavailable" onDismiss={() => setError(null)}>
+          <p>{error}</p>
+          <div className="btn-row btn-row--tight">
+            <button type="button" className="btn btn-secondary btn-small" onClick={() => void loadDashboard()}>
               Try again
             </button>
           </div>
-        </div>
-      )}
+        </Alert>
+      ) : null}
 
-      {/* Fleet summary cards */}
-      {dashboard && (
-        <div className="fleet-summary">
-          <div className="fleet-card">
-            <span className="fleet-number">{dashboard.fleet.total}</span>
-            <span className="fleet-label">Total</span>
-          </div>
-          <div className="fleet-card fleet-available">
-            <span className="fleet-number">{dashboard.fleet.available}</span>
-            <span className="fleet-label">Available</span>
-          </div>
-          <div className="fleet-card fleet-busy">
-            <span className="fleet-number">{dashboard.fleet.onTrip}</span>
-            <span className="fleet-label">On trip</span>
-          </div>
-          <div className="fleet-card fleet-off">
-            <span className="fleet-number">{dashboard.fleet.offDuty}</span>
-            <span className="fleet-label">Off duty</span>
-          </div>
+      {dashboard ? (
+        <div className="stat-grid">
+          <StatCard label="Total fleet" value={dashboard.fleet.total} />
+          <StatCard label="Available" value={dashboard.fleet.available} tone="success" />
+          <StatCard label="On trip" value={dashboard.fleet.onTrip} tone="warning" />
+          <StatCard label="Unavailable" value={dashboard.fleet.offDuty} tone="muted" />
         </div>
-      )}
+      ) : null}
 
-      {/* Live map */}
-      {dashboard && dashboard.activeTrips.length > 0 && (
-        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          <div style={{ padding: '0.75rem 1rem 0' }}>
-            <h2 style={{ margin: 0 }}>Active trips — live</h2>
+      {dashboard && dashboard.activeTrips.length > 0 ? (
+        <Card className="card--flush">
+          <div className="card__header">
+            <h2>Active trips</h2>
+            <p className="muted text-sm">
+              Latest crew position reported over the live connection.
+            </p>
           </div>
-          <div style={{ height: 350, marginTop: '0.5rem' }}>
-            <LiveMap
-              pickupLatitude={mapCenter[0]}
-              pickupLongitude={mapCenter[1]}
-              liveLocation={dashboard.activeTrips[0]?.liveLocation}
-            />
+          <div style={{ padding: '0 var(--space-5)' }}>
+            <div style={{ marginTop: 'var(--space-4)' }}>
+              <LiveMap
+                tall
+                pickupLatitude={mapTarget?.[0] ?? DEFAULT_CENTER[0]}
+                pickupLongitude={mapTarget?.[1] ?? DEFAULT_CENTER[1]}
+                destinationLatitude={dashboard.activeTrips[0]?.destination?.latitude}
+                destinationLongitude={dashboard.activeTrips[0]?.destination?.longitude}
+                liveLocation={dashboard.activeTrips[0]?.liveLocation}
+              />
+            </div>
           </div>
-          <div style={{ padding: '0.5rem 1rem 0.75rem' }}>
+          <div className="card__body">
             {dashboard.activeTrips.map((trip) => (
-              <div key={trip.bookingPublicId} className="dispatch-active-row">
+              <div className="dispatch-active-row" key={trip.bookingPublicId}>
                 <span className="pub-id">{shortId(trip.bookingPublicId)}</span>
-                <UrgencyBadge urgency={trip.urgency as 'EMERGENCY' | 'URGENT' | 'PLANNED'} />
-                <StatusBadge status={trip.status as never} />
+                <UrgencyBadge urgency={trip.urgency} />
+                <StatusBadge status={trip.status} />
                 <span className="muted">
-                  {trip.driver?.name ?? '—'} · {trip.ambulance?.registrationNumber ?? '—'}
+                  {trip.driver?.name ?? 'No crew'} · {trip.ambulance?.registrationNumber ?? '—'}
                 </span>
-                <Link href={`/bookings/${trip.bookingPublicId}`} className="btn btn-ghost btn-small">
+                <Link
+                  href={`/bookings/${trip.bookingPublicId}`}
+                  className="btn btn-ghost btn-small"
+                  style={{ marginLeft: 'auto' }}
+                >
                   Details →
                 </Link>
               </div>
             ))}
           </div>
-        </div>
-      )}
+        </Card>
+      ) : null}
 
-      {dashboard && dashboard.activeTrips.length === 0 && !loading && (
-        <div className="card empty-state">
-          <h3>No active trips</h3>
-          <p>All ambulances are idle. Active trips will appear on the map.</p>
-        </div>
-      )}
-
-      <p>
-        <Link href="/bookings">View all bookings →</Link>
-      </p>
+      {dashboard && dashboard.activeTrips.length === 0 && !loading ? (
+        <EmptyState icon="map" title="No active trips">
+          Every crew is idle. Active trips will appear here and on the map as soon as they are
+          assigned.
+        </EmptyState>
+      ) : null}
 
       <div className="dispatch-grid">
         <section aria-labelledby="queue-heading">
           <h2 id="queue-heading">Pending requests</h2>
           {loading && queue.length === 0 ? (
-            <div role="status" aria-label="Loading queue">
-              <div className="card">
-                <div className="skeleton" />
-                <div className="skeleton" style={{ width: '70%' }} />
-              </div>
-            </div>
+            <SkeletonList rows={2} label="Loading queue" />
           ) : queue.length === 0 ? (
-            <div className="card empty-state">
-              <h3>Queue is clear</h3>
-              <p>No pending requests right now. New bookings will appear here automatically.</p>
-            </div>
+            <EmptyState icon="inbox" title="Queue is clear">
+              New requests appear here automatically.
+            </EmptyState>
           ) : (
-            queue.map((booking) => (
-              <div
-                className="card"
-                key={booking.publicId}
-                style={{
-                  borderColor: selectedId === booking.publicId ? 'var(--color-primary)' : undefined,
-                  borderWidth: selectedId === booking.publicId ? 2 : 1,
-                }}
-              >
-                <div className="meta-row" style={{ marginTop: 0 }}>
-                  <span className="pub-id">{shortId(booking.publicId)}</span>
-                  <UrgencyBadge urgency={booking.urgency} />
-                  <span>{booking.requiredAmbulanceType}</span>
-                  <span className="muted">{ageLabel(booking.createdAt)}</span>
-                </div>
-                <div className="route-summary">
-                  <div className="route-stop">
-                    <span className="route-dot" aria-hidden="true" />
-                    <span>{booking.pickup.label} — {booking.pickup.address}</span>
+            queue.map((booking) => {
+              const isSelected = selectedId === booking.publicId;
+              return (
+                <Card key={booking.publicId} className={isSelected ? 'card--selected' : 'card--interactive'}>
+                  <div className="spread">
+                    <div className="meta-row" style={{ marginTop: 0 }}>
+                      <span className="pub-id">{shortId(booking.publicId)}</span>
+                      <UrgencyBadge urgency={booking.urgency} />
+                      <StatusBadge status={booking.status} />
+                    </div>
+                    <span className="badge badge-neutral">{ageLabel(booking.createdAt)}</span>
                   </div>
-                  <div className="route-stop">
-                    <span className="route-dot destination" aria-hidden="true" />
-                    <span>{booking.destination.label} — {booking.destination.address}</span>
+
+                  <RouteSummary booking={booking} />
+
+                  <div className="meta-row">
+                    <span>{booking.requiredAmbulanceType}</span>
+                    {booking.destinationPending ? (
+                      <>
+                        <span aria-hidden="true">·</span>
+                        <span>Facility to be confirmed</span>
+                      </>
+                    ) : null}
                   </div>
-                </div>
-                <div className="btn-row">
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-small"
-                    aria-pressed={selectedId === booking.publicId}
-                    onClick={() =>
-                      setSelectedId((prev) => (prev === booking.publicId ? null : booking.publicId))
-                    }
-                  >
-                    {selectedId === booking.publicId ? 'Selected' : 'Select for dispatch'}
-                  </button>
-                </div>
-              </div>
-            ))
+
+                  <div className="btn-row">
+                    <button
+                      type="button"
+                      className={isSelected ? 'btn btn-primary btn-small' : 'btn btn-secondary btn-small'}
+                      aria-pressed={isSelected}
+                      onClick={() => setSelectedId(isSelected ? null : booking.publicId)}
+                    >
+                      {isSelected ? 'Selected' : 'Select to dispatch'}
+                    </button>
+                    <Link className="btn btn-ghost btn-small" href={`/bookings/${booking.publicId}`}>
+                      Open
+                    </Link>
+                  </div>
+                </Card>
+              );
+            })
           )}
         </section>
 
         <section aria-labelledby="eligible-heading">
           <h2 id="eligible-heading">Eligible ambulances</h2>
           {!selected ? (
-            <p className="muted">Select a pending request to see eligible ambulances.</p>
+            <EmptyState icon="ambulance" title="Select a request">
+              Choose a pending request on the left to see the vehicles that can take it, nearest
+              first.
+            </EmptyState>
           ) : eligibleLoading ? (
-            <div role="status" aria-label="Loading eligible ambulances">
-              <div className="card">
-                <div className="skeleton" />
-                <div className="skeleton" style={{ width: '60%' }} />
-              </div>
-            </div>
+            <SkeletonList rows={2} label="Loading eligible ambulances" />
           ) : (
             <>
-              <p className="muted">
-                For request <span className="pub-id">{shortId(selected.publicId)}</span> ({selected.requiredAmbulanceType},{' '}
-                {selected.urgency}):
+              <p className="muted text-sm">
+                For request <span className="pub-id">{shortId(selected.publicId)}</span> —{' '}
+                {selected.requiredAmbulanceType}, {statusLabel(selected.status)}.
               </p>
-              {actionError && (
-                <div className="alert alert-error" role="alert" aria-live="assertive">
-                  {actionError}
-                </div>
-              )}
+
+              {actionError ? <Alert tone="error">{actionError}</Alert> : null}
+
               {eligible.length === 0 ? (
-                <div className="card empty-state">
-                  <h3>No eligible ambulances</h3>
-                  <p>
-                    No available ambulance matches the required type and service area for this
-                    request.
-                  </p>
-                </div>
+                <EmptyState icon="ambulance" title="No eligible vehicle">
+                  No available ambulance matches the required type right now. The request stays in
+                  the queue and will be offered again when one is released.
+                </EmptyState>
               ) : (
                 eligible.map((ambulance) => (
-                  <div className="card" key={ambulance.publicId}>
-                    <div className="meta-row" style={{ marginTop: 0 }}>
+                  <Card key={ambulance.publicId}>
+                    <div className="spread">
                       <strong>{ambulance.registrationNumber}</strong>
-                      <span>{ambulance.type}</span>
+                      <span className="badge badge-neutral">{ambulance.type}</span>
                     </div>
-                    <p className="muted" style={{ margin: '0.25rem 0' }}>
-                      Service area: {ambulance.serviceArea}
-                      {ambulance.capabilities.length > 0 && (
-                        <>
-                          {' '}
-                          · Capabilities: {ambulance.capabilities.join(', ')}
-                        </>
-                      )}
+                    <p className="muted text-sm" style={{ margin: 'var(--space-2) 0 0' }}>
+                      {ambulance.serviceArea}
+                      {ambulance.capabilities.length > 0
+                        ? ` · ${ambulance.capabilities.join(', ')}`
+                        : ''}
+                      {ambulance.distanceKm !== undefined
+                        ? ` · ${ambulance.distanceKm.toFixed(1)} km from pickup`
+                        : ' · distance unknown'}
                     </p>
+                    {ambulance.assignedDriverName ? (
+                      <p className="muted text-sm" style={{ margin: 0 }}>
+                        Crew: {ambulance.assignedDriverName}
+                      </p>
+                    ) : (
+                      <p className="text-sm" style={{ color: 'var(--signal-warning)', margin: 0 }}>
+                        No crew attached — this vehicle cannot be dispatched.
+                      </p>
+                    )}
                     <div className="btn-row">
                       <button
                         type="button"
                         className="btn btn-primary btn-small"
-                        disabled={assigning !== null}
+                        disabled={assigning !== null || !ambulance.assignedDriverPublicId}
                         onClick={() => void assign(ambulance.publicId)}
                       >
                         {assigning === ambulance.publicId ? 'Assigning…' : 'Assign'}
                       </button>
                     </div>
-                  </div>
+                  </Card>
                 ))
               )}
             </>
@@ -362,4 +361,4 @@ export default function DispatcherPage() {
       <DispatcherContent />
     </RequireRole>
   );
-}
+}
